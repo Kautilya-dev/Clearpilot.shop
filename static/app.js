@@ -1,0 +1,173 @@
+const modeAskBtn = document.getElementById("modeAskBtn");
+const modePracticeBtn = document.getElementById("modePracticeBtn");
+const askMode = document.getElementById("askMode");
+const practiceMode = document.getElementById("practiceMode");
+
+const micBtn = document.getElementById("micBtn");
+const questionInput = document.getElementById("questionInput");
+const askBtn = document.getElementById("askBtn");
+const statusEl = document.getElementById("status");
+const answerBox = document.getElementById("answerBox");
+const historyList = document.getElementById("historyList");
+
+const nextQBtn = document.getElementById("nextQBtn");
+const revealBtn = document.getElementById("revealBtn");
+const practiceQuestionEl = document.getElementById("practiceQuestion");
+const practiceAnswerEl = document.getElementById("practiceAnswer");
+
+let history = [];
+let currentPracticeQuestion = null;
+
+modeAskBtn.addEventListener("click", () => {
+  modeAskBtn.classList.add("active");
+  modePracticeBtn.classList.remove("active");
+  askMode.classList.remove("hidden");
+  practiceMode.classList.add("hidden");
+});
+
+modePracticeBtn.addEventListener("click", () => {
+  modePracticeBtn.classList.add("active");
+  modeAskBtn.classList.remove("active");
+  practiceMode.classList.remove("hidden");
+  askMode.classList.add("hidden");
+});
+
+function renderHistory() {
+  historyList.innerHTML = history
+    .slice()
+    .reverse()
+    .map(
+      (item) => `
+      <div class="history-item">
+        <div class="q">${escapeHtml(item.question)}</div>
+        <div class="a">${escapeHtml(item.answer)}</div>
+      </div>`
+    )
+    .join("");
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+async function streamAnswer(question, targetEl, onDone) {
+  targetEl.textContent = "";
+  const t0 = performance.now();
+  const res = await fetch("/api/ask", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question }),
+  });
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let full = "";
+  let firstChunk = true;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (firstChunk) {
+      statusEl.textContent = `First response in ${Math.round(performance.now() - t0)}ms`;
+      firstChunk = false;
+    }
+    const text = decoder.decode(value, { stream: true });
+    full += text;
+    targetEl.textContent = full;
+  }
+
+  if (onDone) onDone(full);
+}
+
+async function askQuestion(question) {
+  if (!question.trim()) return;
+  statusEl.textContent = "Thinking...";
+  await streamAnswer(question, answerBox, (full) => {
+    history.push({ question, answer: full });
+    renderHistory();
+  });
+}
+
+askBtn.addEventListener("click", () => {
+  const q = questionInput.value;
+  askQuestion(q);
+});
+
+questionInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    askQuestion(questionInput.value);
+  }
+});
+
+// --- Mic input (push-to-talk via Web Speech API, not continuous listening) ---
+let recognition = null;
+let isRecording = false;
+
+const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+if (SpeechRecognitionImpl) {
+  recognition = new SpeechRecognitionImpl();
+  recognition.lang = "en-US";
+  recognition.interimResults = true;
+  recognition.continuous = false;
+
+  recognition.onresult = (event) => {
+    let transcript = "";
+    for (let i = 0; i < event.results.length; i++) {
+      transcript += event.results[i][0].transcript;
+    }
+    questionInput.value = transcript;
+  };
+
+  recognition.onend = () => {
+    isRecording = false;
+    micBtn.classList.remove("recording");
+    if (questionInput.value.trim()) {
+      askQuestion(questionInput.value);
+    }
+  };
+
+  recognition.onerror = (e) => {
+    isRecording = false;
+    micBtn.classList.remove("recording");
+    statusEl.textContent = `Mic error: ${e.error}`;
+  };
+
+  micBtn.addEventListener("click", () => {
+    if (isRecording) {
+      recognition.stop();
+      return;
+    }
+    questionInput.value = "";
+    statusEl.textContent = "Listening...";
+    isRecording = true;
+    micBtn.classList.add("recording");
+    recognition.start();
+  });
+} else {
+  micBtn.disabled = true;
+  micBtn.title = "Speech recognition isn't supported in this browser - try Chrome";
+}
+
+// --- Practice mode ---
+async function loadNextPracticeQuestion() {
+  practiceAnswerEl.textContent = "";
+  revealBtn.disabled = true;
+  const res = await fetch("/api/practice-question");
+  const data = await res.json();
+  currentPracticeQuestion = data.question;
+  practiceQuestionEl.textContent = currentPracticeQuestion || "No practice questions available yet - run build_index.py first.";
+  revealBtn.disabled = !currentPracticeQuestion;
+}
+
+nextQBtn.addEventListener("click", loadNextPracticeQuestion);
+
+revealBtn.addEventListener("click", () => {
+  if (!currentPracticeQuestion) return;
+  streamAnswer(currentPracticeQuestion, practiceAnswerEl, (full) => {
+    history.push({ question: currentPracticeQuestion, answer: full });
+    renderHistory();
+  });
+});

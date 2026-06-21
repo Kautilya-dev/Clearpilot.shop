@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CPI Interview Assistant</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>SAP CPI Study Assistant</h1>
+      <div class="mode-toggle">
+        <button id="modeAskBtn" class="mode-btn active">Ask</button>
+        <button id="modePracticeBtn" class="mode-btn">Practice</button>
+      </div>
+    </header>
+
+    <section id="askMode" class="panel">
+      <div class="ask-row">
+        <button id="micBtn" class="mic-btn" title="Click to start/stop speaking">🎤</button>
+        <input id="questionInput" type="text" placeholder="Ask a SAP CPI question, or click the mic and speak..." />
+        <button id="askBtn" class="ask-btn">Ask</button>
+      </div>
+      <div id="status" class="status"></div>
+      <div id="answerBox" class="answer-box"></div>
+    </section>
+
+    <section id="practiceMode" class="panel hidden">
+      <div class="practice-controls">
+        <button id="nextQBtn">Next Question</button>
+        <button id="revealBtn" disabled>Reveal Answer</button>
+      </div>
+      <div id="practiceQuestion" class="practice-question"></div>
+      <div id="practiceAnswer" class="answer-box"></div>
+    </section>
+
+    <section class="history">
+      <h2>History</h2>
+      <div id="historyList"></div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
