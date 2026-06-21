@@ -165,6 +165,7 @@ nextQBtn.addEventListener("click", loadNextPracticeQuestion);
 
 revealBtn.addEventListener("click", () => {
   if (!currentPracticeQuestion) return;
+  revealBtn.disabled = true;
   streamAnswer(currentPracticeQuestion, practiceAnswerEl, (full) => {
     history.push({ question: currentPracticeQuestion, answer: full });
     renderHistory();

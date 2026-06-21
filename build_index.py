@@ -158,8 +158,17 @@ EXCLUDE_PATTERNS = re.compile(
 )
 
 
+NARRATIVE_PATTERNS = re.compile(
+    r"\byears? of experience\b|\bI have (overall|around|about)\b|\bI am [A-Z][a-z]+\b|"
+    r"^(yeah,? )*(yeah|yes|okay,? )*i (am|have|worked|got)\b",
+    re.IGNORECASE,
+)
+
+
 def is_technical_question(q):
-    if EXCLUDE_PATTERNS.search(q):
+    if "?" not in q:
+        return False
+    if EXCLUDE_PATTERNS.search(q) or NARRATIVE_PATTERNS.search(q):
         return False
     q_lower = q.lower()
     return any(kw in q_lower for kw in TECH_KEYWORDS)
