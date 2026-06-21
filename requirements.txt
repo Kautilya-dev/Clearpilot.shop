@@ -5,3 +5,4 @@ rank-bm25
 python-docx
 PyMuPDF
 python-dotenv
+python-multipart
