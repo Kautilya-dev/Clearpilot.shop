@@ -18,19 +18,18 @@ const practiceAnswerEl = document.getElementById("practiceAnswer");
 let history = [];
 let currentPracticeQuestion = null;
 
-modeAskBtn.addEventListener("click", () => {
-  modeAskBtn.classList.add("active");
-  modePracticeBtn.classList.remove("active");
-  askMode.classList.remove("hidden");
-  practiceMode.classList.add("hidden");
-});
+function setMode(mode) {
+  const isAsk = mode === "ask";
+  modeAskBtn.classList.toggle("btn-primary", isAsk);
+  modeAskBtn.classList.toggle("btn-outline-primary", !isAsk);
+  modePracticeBtn.classList.toggle("btn-primary", !isAsk);
+  modePracticeBtn.classList.toggle("btn-outline-primary", isAsk);
+  askMode.classList.toggle("d-none", !isAsk);
+  practiceMode.classList.toggle("d-none", isAsk);
+}
 
-modePracticeBtn.addEventListener("click", () => {
-  modePracticeBtn.classList.add("active");
-  modeAskBtn.classList.remove("active");
-  practiceMode.classList.remove("hidden");
-  askMode.classList.add("hidden");
-});
+modeAskBtn.addEventListener("click", () => setMode("ask"));
+modePracticeBtn.addEventListener("click", () => setMode("practice"));
 
 function renderHistory() {
   historyList.innerHTML = history
@@ -38,9 +37,9 @@ function renderHistory() {
     .reverse()
     .map(
       (item) => `
-      <div class="history-item">
-        <div class="q">${escapeHtml(item.question)}</div>
-        <div class="a">${escapeHtml(item.answer)}</div>
+      <div class="list-group-item bg-body-tertiary">
+        <div class="history-item-q">${escapeHtml(item.question)}</div>
+        <div class="history-item-a">${escapeHtml(item.answer)}</div>
       </div>`
     )
     .join("");

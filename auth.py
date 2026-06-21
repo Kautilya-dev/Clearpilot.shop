@@ -37,30 +37,24 @@ def verify_session_token(token):
 
 
 LOGIN_HTML = """<!DOCTYPE html>
-<html><head><title>CPI Study Assistant - Login</title>
-<style>
-  body {{ background:#0f1117; color:#e6e8ee; font-family:-apple-system,Segoe UI,sans-serif;
-         display:flex; align-items:center; justify-content:center; height:100vh; margin:0; }}
-  form {{ background:#171a23; padding:32px; border-radius:12px; border:1px solid #2a2e3a; width:280px; }}
-  h1 {{ font-size:1.1rem; margin:0 0 16px; }}
-  input {{ width:100%; padding:10px; margin-bottom:12px; border-radius:8px; border:1px solid #2a2e3a;
-           background:#0f1117; color:#e6e8ee; box-sizing:border-box; }}
-  button {{ width:100%; padding:10px; border-radius:8px; border:none; background:#4f8cff; color:white; cursor:pointer; }}
-  .error {{ color:#ff5d5d; font-size:0.85rem; margin-bottom:12px; }}
-</style></head>
-<body>
-  <form method="post" action="/login">
-    <h1>SAP CPI Study Assistant</h1>
+<html lang="en" data-bs-theme="dark"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClearPilot - Login</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="d-flex align-items-center justify-content-center" style="height:100vh;">
+  <form method="post" action="/login" class="card bg-body-tertiary border-secondary-subtle p-4" style="width:300px;">
+    <h1 class="h5 mb-3">ClearPilot</h1>
     {error_html}
-    <input type="password" name="password" placeholder="Password" autofocus />
-    <button type="submit">Unlock</button>
+    <input type="password" name="password" class="form-control mb-3" placeholder="Password" autofocus />
+    <button type="submit" class="btn btn-primary w-100">Unlock</button>
   </form>
 </body></html>
 """
 
 
 def login_page_html(error=False):
-    error_html = '<div class="error">Wrong password</div>' if error else ""
+    error_html = '<div class="alert alert-danger py-2 mb-3">Wrong password</div>' if error else ""
     return LOGIN_HTML.format(error_html=error_html)
 
 
