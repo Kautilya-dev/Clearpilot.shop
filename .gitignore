@@ -1,3 +1,4 @@
 .env
+profile.txt
 __pycache__/
 *.pyc

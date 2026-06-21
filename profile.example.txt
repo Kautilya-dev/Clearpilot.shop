@@ -1,0 +1,8 @@
+Copy this to profile.txt (gitignored, stays local) and fill in your real background,
+or set the CANDIDATE_PROFILE environment variable with the same content for deployment.
+This is used only to calibrate the technical depth of answers - not to fabricate work history.
+
+Years of experience:
+Adapters/tools used hands-on:
+Certifications:
+Current role / situation:

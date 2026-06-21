@@ -31,16 +31,31 @@ ANSWER_CACHE = APP_DIR / "answer_cache.json"
 
 CHUNK_WORDS = 250
 
-SYSTEM_PROMPT = """You are a senior SAP CPI (Cloud Platform Integration) technical consultant helping a colleague prepare for interviews.
+BASE_SYSTEM_PROMPT = """You are a senior SAP CPI (Cloud Platform Integration) technical consultant helping a colleague prepare for interviews.
 
 Answer like an experienced consultant explaining a solution in an interview: confident, structured, and technically specific - name the actual adapters, steps, configuration, or Groovy/script approach involved. Do not give dry textbook definitions; explain HOW you would implement or solve it.
 
 Stay strictly scoped to SAP CPI itself (iFlows, adapters, Groovy/JavaScript scripting, message mapping, security artifacts, monitoring, JMS, error handling). Do not wander into general BTP platform administration topics unless they are a direct part of a CPI integration step (e.g. Cloud Connector setup is fine; unrelated BTP services are not).
 
-Never claim specific personal employment history, named clients, or first-person project narratives ("I worked on this at Company X") - the person asking has not necessarily done that work. Speak in terms of how the implementation would be approached ("you would configure...", "the typical approach is...", "to solve this, you'd..."), not fabricated autobiography.
+Never claim specific personal employment history, named clients, or first-person project narratives ("I worked on this at Company X") unless that real experience is explicitly given to you below in the candidate profile - don't invent employers, clients, or projects that aren't stated there. Speak in terms of how the implementation would be approached ("you would configure...", "the typical approach is...", "to solve this, you'd..."), not fabricated autobiography.
 
 Ground your answer in the provided reference material when it's relevant, but you may supplement with your own correct CPI knowledge if the material doesn't cover it. Keep answers focused and complete - a few short paragraphs or a tight bullet list, not a wall of text.
+
+For behavioral/scenario questions ("tell me about a time...", "how did you handle...", "describe a situation where..."), structure the answer with STAR (Situation, Task, Action, Result). If the candidate profile below contains real relevant experience, ground the STAR answer in that truthfully. If it doesn't, frame it generically and hypothetically ("a common situation is...", "the task would typically be...") rather than inventing a specific fake personal anecdote. For purely technical how-to questions, skip STAR and just answer directly with clear technical structure.
 """
+
+
+def build_system_prompt(profile_text=""):
+    profile_text = (profile_text or "").strip()
+    if not profile_text:
+        return BASE_SYSTEM_PROMPT
+    return (
+        BASE_SYSTEM_PROMPT
+        + "\n\nCandidate profile (their real, actual background - use this to calibrate technical "
+        + "depth and as the only source of truth for any personal experience claims; don't assume "
+        + "skills or projects beyond what's stated here):\n"
+        + profile_text
+    )
 
 COMMON_CPI_QUESTIONS = [
     "What is the difference between XSLT mapping and Groovy script in CPI?",
@@ -199,7 +214,22 @@ def extract_questions():
     return questions
 
 
-def generate_answer(client, bm25, chunks, question):
+def load_profile():
+    # Prefer an env var so real background info never has to be committed to git.
+    env_profile = os.environ.get("CANDIDATE_PROFILE", "").strip()
+    if env_profile:
+        return env_profile
+
+    profile_path = APP_DIR / "profile.txt"
+    if not profile_path.exists():
+        return ""
+    text = profile_path.read_text(encoding="utf-8", errors="ignore").strip()
+    if text.startswith("Fill this in with your real"):
+        return ""  # still the placeholder, treat as unset
+    return text
+
+
+def generate_answer(client, bm25, chunks, question, profile_text=""):
     context_chunks = retrieve(bm25, chunks, question)
     context = "\n\n---\n\n".join(
         f"[Source: {c['source']}]\n{c['text']}" for c in context_chunks
@@ -208,7 +238,7 @@ def generate_answer(client, bm25, chunks, question):
     resp = client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=500,
-        system=SYSTEM_PROMPT,
+        system=build_system_prompt(profile_text),
         messages=[{"role": "user", "content": user_msg}],
     )
     return resp.content[0].text
@@ -238,6 +268,8 @@ def main():
         return
 
     client = anthropic.Anthropic(api_key=api_key)
+    profile_text = load_profile()
+    print(f"Candidate profile loaded: {'yes' if profile_text else 'no (using generic calibration)'}")
 
     all_questions = list(dict.fromkeys(questions + COMMON_CPI_QUESTIONS))
     print(f"\nPre-generating answers for {len(all_questions)} questions "
@@ -254,7 +286,7 @@ def main():
         if q in cache:
             continue
         try:
-            answer = generate_answer(client, bm25, chunks, q)
+            answer = generate_answer(client, bm25, chunks, q, profile_text)
             cache[q] = answer
             print(f"  [{i}/{len(all_questions)}] cached: {q[:60]}")
         except Exception as e:

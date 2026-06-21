@@ -14,9 +14,13 @@ const nextQBtn = document.getElementById("nextQBtn");
 const revealBtn = document.getElementById("revealBtn");
 const practiceQuestionEl = document.getElementById("practiceQuestion");
 const practiceAnswerEl = document.getElementById("practiceAnswer");
+const debugInfoEl = document.getElementById("debugInfo");
+const practiceDebugInfoEl = document.getElementById("practiceDebugInfo");
 
 let history = [];
+let chatMemory = []; // Ask-mode conversational memory only (not practice mode)
 let currentPracticeQuestion = null;
+const MAX_MEMORY_TURNS = 4;
 
 function setMode(mode) {
   const isAsk = mode === "ask";
@@ -51,14 +55,31 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-async function streamAnswer(question, targetEl, onDone) {
+function renderDebugInfo(debugEl, source, sources) {
+  if (!source) {
+    debugEl.classList.add("d-none");
+    return;
+  }
+  const label = source === "cache" ? "instant cache hit" : source === "live" ? "live Claude call" : "error";
+  debugEl.textContent = `Debug: ${label} | sources used: ${sources || "none"}`;
+  debugEl.classList.remove("d-none");
+}
+
+async function streamAnswer(question, targetEl, onDone, { sendHistory = false, debugEl = null } = {}) {
   targetEl.textContent = "";
   const t0 = performance.now();
   const res = await fetch("/api/ask", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({
+      question,
+      history: sendHistory ? chatMemory.slice(-MAX_MEMORY_TURNS) : [],
+    }),
   });
+
+  if (debugEl) {
+    renderDebugInfo(debugEl, res.headers.get("X-Answer-Source"), res.headers.get("X-Sources"));
+  }
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -83,10 +104,16 @@ async function streamAnswer(question, targetEl, onDone) {
 async function askQuestion(question) {
   if (!question.trim()) return;
   statusEl.textContent = "Thinking...";
-  await streamAnswer(question, answerBox, (full) => {
-    history.push({ question, answer: full });
-    renderHistory();
-  });
+  await streamAnswer(
+    question,
+    answerBox,
+    (full) => {
+      history.push({ question, answer: full });
+      chatMemory.push({ question, answer: full });
+      renderHistory();
+    },
+    { sendHistory: true, debugEl: debugInfoEl }
+  );
 }
 
 askBtn.addEventListener("click", () => {
@@ -153,6 +180,7 @@ if (SpeechRecognitionImpl) {
 // --- Practice mode ---
 async function loadNextPracticeQuestion() {
   practiceAnswerEl.textContent = "";
+  practiceDebugInfoEl.classList.add("d-none");
   revealBtn.disabled = true;
   const res = await fetch("/api/practice-question");
   const data = await res.json();
@@ -166,8 +194,13 @@ nextQBtn.addEventListener("click", loadNextPracticeQuestion);
 revealBtn.addEventListener("click", () => {
   if (!currentPracticeQuestion) return;
   revealBtn.disabled = true;
-  streamAnswer(currentPracticeQuestion, practiceAnswerEl, (full) => {
-    history.push({ question: currentPracticeQuestion, answer: full });
-    renderHistory();
-  });
+  streamAnswer(
+    currentPracticeQuestion,
+    practiceAnswerEl,
+    (full) => {
+      history.push({ question: currentPracticeQuestion, answer: full });
+      renderHistory();
+    },
+    { sendHistory: false, debugEl: practiceDebugInfoEl }
+  );
 });

@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from build_index import SYSTEM_PROMPT, retrieve, tokenize
+from build_index import build_system_prompt, load_profile, retrieve, tokenize
 from auth import AuthMiddleware, login_get, login_post
 
 load_dotenv()
@@ -22,6 +22,8 @@ APP_DIR = Path(__file__).resolve().parent
 INDEX_CACHE = APP_DIR / "index_cache.pkl"
 QUESTIONS_BANK = APP_DIR / "questions_bank.json"
 ANSWER_CACHE = APP_DIR / "answer_cache.json"
+
+MAX_HISTORY_TURNS = 4
 
 state = {}
 
@@ -44,11 +46,15 @@ async def lifespan(app: FastAPI):
         json.loads(ANSWER_CACHE.read_text(encoding="utf-8")) if ANSWER_CACHE.exists() else {}
     )
 
+    profile_text = load_profile()
+    state["system_prompt"] = build_system_prompt(profile_text)
+
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     state["client"] = anthropic.Anthropic(api_key=api_key) if api_key and "your-new" not in api_key else None
 
     print(f"Loaded {len(state['chunks'])} chunks, {len(state['questions'])} questions, "
-          f"{len(state['answers'])} cached answers. API key configured: {state['client'] is not None}")
+          f"{len(state['answers'])} cached answers. Profile set: {bool(profile_text)}. "
+          f"API key configured: {state['client'] is not None}")
     yield
 
 
@@ -66,8 +72,14 @@ def login_submit(password: str = Form(...)):
     return login_post(password)
 
 
+class HistoryTurn(BaseModel):
+    question: str
+    answer: str
+
+
 class AskRequest(BaseModel):
     question: str
+    history: list[HistoryTurn] = []
 
 
 def normalize(q):
@@ -98,10 +110,21 @@ def find_cached_answer(question):
     return best_match if best_score >= 0.6 else None
 
 
-def build_user_message(question):
-    chunks = retrieve(state["bm25"], state["chunks"], question)
+def retrieve_chunks(question):
+    return retrieve(state["bm25"], state["chunks"], question) if state["bm25"] else []
+
+
+def build_user_message(question, chunks):
     context = "\n\n---\n\n".join(f"[Source: {c['source']}]\n{c['text']}" for c in chunks)
     return f"Reference material:\n{context}\n\nQuestion: {question}"
+
+
+def sources_header_value(chunks):
+    seen = []
+    for c in chunks:
+        if c["source"] not in seen:
+            seen.append(c["source"])
+    return "; ".join(seen) if seen else "none"
 
 
 @app.post("/api/ask")
@@ -110,32 +133,52 @@ async def ask(req: AskRequest):
     if not question:
         return StreamingResponse(iter([""]), media_type="text/plain")
 
-    cached = find_cached_answer(question)
-    if cached:
-        return StreamingResponse(iter([cached]), media_type="text/plain")
+    has_history = len(req.history) > 0
+
+    if not has_history:
+        cached = find_cached_answer(question)
+        if cached:
+            return StreamingResponse(
+                iter([cached]),
+                media_type="text/plain",
+                headers={"X-Answer-Source": "cache", "X-Sources": "cached-answer"},
+            )
 
     client = state["client"]
+    chunks = retrieve_chunks(question)
+
     if client is None:
         msg = "No ANTHROPIC_API_KEY configured on the server. Add one to .env and restart the server."
-        return StreamingResponse(iter([msg]), media_type="text/plain")
+        return StreamingResponse(
+            iter([msg]), media_type="text/plain", headers={"X-Answer-Source": "error", "X-Sources": "none"}
+        )
 
-    user_msg = build_user_message(question)
+    messages = []
+    for turn in req.history[-MAX_HISTORY_TURNS:]:
+        messages.append({"role": "user", "content": turn.question})
+        messages.append({"role": "assistant", "content": turn.answer})
+    messages.append({"role": "user", "content": build_user_message(question, chunks)})
 
     def stream():
         full = []
         with client.messages.stream(
             model="claude-sonnet-4-6",
             max_tokens=500,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_msg}],
+            system=state["system_prompt"],
+            messages=messages,
         ) as s:
             for text in s.text_stream:
                 full.append(text)
                 yield text
-        state["answers"][question] = "".join(full)
-        ANSWER_CACHE.write_text(json.dumps(state["answers"], indent=2), encoding="utf-8")
+        if not has_history:
+            state["answers"][question] = "".join(full)
+            ANSWER_CACHE.write_text(json.dumps(state["answers"], indent=2), encoding="utf-8")
 
-    return StreamingResponse(stream(), media_type="text/plain")
+    return StreamingResponse(
+        stream(),
+        media_type="text/plain",
+        headers={"X-Answer-Source": "live", "X-Sources": sources_header_value(chunks)},
+    )
 
 
 @app.get("/api/practice-question")
