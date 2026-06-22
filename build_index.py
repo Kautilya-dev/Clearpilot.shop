@@ -1,21 +1,27 @@
 """
-Builds the local search index, practice question bank, and pre-generated
-answer cache for the SAP CPI interview study assistant.
+Builds/rebuilds the document index (Chroma + SQLite, via store.py), the practice
+question bank, and the pre-generated answer cache for the SAP CPI interview study
+assistant.
 
-Run this once after setting ANTHROPIC_API_KEY in .env, and again any time
-the source documents change.
+Run this once after setting ANTHROPIC_API_KEY in .env, and again any time the
+source documents (Notes/, the handbook PDF) change - it's a fresh rebuild of just
+that "folder" content (store.clear_origin("folder")); anything added live via the
+running app's /api/upload is left untouched.
 """
 import os
 import json
-import pickle
 import re
 from pathlib import Path
 
-import docx
-import fitz  # PyMuPDF
+import numpy as np
 from rank_bm25 import BM25Okapi
+from fastembed import TextEmbedding
 from dotenv import load_dotenv
 import anthropic
+
+import store
+from parsers import SUPPORTED_EXTENSIONS, extract_sections_by_extension
+from chunking import chunk_sections
 
 load_dotenv()
 
@@ -25,11 +31,24 @@ NOTES_DIR = BASE_DIR / "Notes"
 HANDBOOK_PDF = BASE_DIR / "SAP Cloud Platform Integration Hand Book.pdf"
 INTERVIEWS_DIR = BASE_DIR / "RealTime Interviews"
 
-INDEX_CACHE = APP_DIR / "index_cache.pkl"
 QUESTIONS_BANK = APP_DIR / "questions_bank.json"
 ANSWER_CACHE = APP_DIR / "answer_cache.json"
 
-CHUNK_WORDS = 250
+EMBEDDING_MODEL_NAME = "BAAI/bge-small-en-v1.5"
+
+_embed_model = None
+
+
+def get_embed_model():
+    global _embed_model
+    if _embed_model is None:
+        _embed_model = TextEmbedding(model_name=EMBEDDING_MODEL_NAME)
+    return _embed_model
+
+
+def embed_texts(texts):
+    return np.array(list(get_embed_model().embed(texts)))
+
 
 BASE_SYSTEM_PROMPT = """You are a senior SAP CPI (Cloud Platform Integration) technical consultant helping a colleague prepare for interviews.
 
@@ -45,17 +64,78 @@ For behavioral/scenario questions ("tell me about a time...", "how did you handl
 """
 
 
+STRUCTURED_TRAILER_SENTINEL = "<<<CLEARPILOT_STRUCTURED>>>"
+
+STRUCTURED_REPLY_INSTRUCTIONS = f"""
+
+After your prose answer, on a new line output exactly this sentinel: {STRUCTURED_TRAILER_SENTINEL}
+On the line after that, output a single-line JSON object with exactly these keys:
+- "key_points": an array of 2-5 short strings summarizing the answer's main points
+- "confidence": one of "high", "medium", or "low", reflecting how well the reference material actually supports this answer
+
+Output nothing after that JSON object - no extra commentary, no repeating the answer, no source citations (those are added separately). Example ending:
+{STRUCTURED_TRAILER_SENTINEL}
+{{"key_points": ["Point one", "Point two"], "confidence": "high"}}
+"""
+
+
 def build_system_prompt(profile_text=""):
     profile_text = (profile_text or "").strip()
-    if not profile_text:
-        return BASE_SYSTEM_PROMPT
-    return (
-        BASE_SYSTEM_PROMPT
-        + "\n\nCandidate profile (their real, actual background - use this to calibrate technical "
-        + "depth and as the only source of truth for any personal experience claims; don't assume "
-        + "skills or projects beyond what's stated here):\n"
-        + profile_text
-    )
+    base = BASE_SYSTEM_PROMPT
+    if profile_text:
+        base = (
+            base
+            + "\n\nCandidate profile (their real, actual background - use this to calibrate technical "
+            + "depth and as the only source of truth for any personal experience claims; don't assume "
+            + "skills or projects beyond what's stated here):\n"
+            + profile_text
+        )
+    return base + STRUCTURED_REPLY_INSTRUCTIONS
+
+
+def parse_structured_trailer(raw_text):
+    """Parses the {"key_points": [...], "confidence": "..."} JSON the model emits after
+    STRUCTURED_TRAILER_SENTINEL. Falls back to safe defaults if it doesn't parse cleanly
+    (e.g. truncated by max_tokens before the model reached the trailer)."""
+    try:
+        data = json.loads(raw_text.strip())
+    except Exception:
+        return [], "medium"
+    key_points = data.get("key_points")
+    if not isinstance(key_points, list):
+        key_points = []
+    confidence = data.get("confidence")
+    if confidence not in ("high", "medium", "low"):
+        confidence = "medium"
+    return [str(p) for p in key_points][:5], confidence
+
+
+def build_evidence(chunks, max_items=3, snippet_len=160):
+    evidence = []
+    for c in chunks[:max_items]:
+        text = c["text"].strip()
+        snippet = text[:snippet_len] + ("..." if len(text) > snippet_len else "")
+        evidence.append({"source": c["source"], "section": c.get("section", ""), "snippet": snippet})
+    return evidence
+
+
+def split_structured_response(raw_text, chunks):
+    """Splits a full (non-streamed) model response into the structured answer shape
+    {answer, key_points, evidence, confidence}. server.py's /api/ask does the streaming
+    equivalent of this incrementally while tokens arrive."""
+    idx = raw_text.find(STRUCTURED_TRAILER_SENTINEL)
+    if idx == -1:
+        answer_text, key_points, confidence = raw_text.strip(), [], "medium"
+    else:
+        answer_text = raw_text[:idx].strip()
+        key_points, confidence = parse_structured_trailer(raw_text[idx + len(STRUCTURED_TRAILER_SENTINEL):])
+    return {
+        "answer": answer_text,
+        "key_points": key_points,
+        "evidence": build_evidence(chunks),
+        "confidence": confidence,
+    }
+
 
 COMMON_CPI_QUESTIONS = [
     "What is the difference between XSLT mapping and Groovy script in CPI?",
@@ -76,63 +156,6 @@ COMMON_CPI_QUESTIONS = [
 ]
 
 
-def extract_docx(path):
-    try:
-        d = docx.Document(str(path))
-        return "\n".join(p.text for p in d.paragraphs if p.text.strip())
-    except Exception as e:
-        print(f"  ! failed to read {path.name}: {e}")
-        return ""
-
-
-def extract_pdf(path):
-    try:
-        doc = fitz.open(str(path))
-        text = "\n".join(page.get_text() for page in doc)
-        doc.close()
-        return text
-    except Exception as e:
-        print(f"  ! failed to read {path.name}: {e}")
-        return ""
-
-
-def chunk_text(text, source, chunk_words=CHUNK_WORDS):
-    words = text.split()
-    chunks = []
-    for i in range(0, len(words), chunk_words):
-        piece = words[i:i + chunk_words]
-        if len(piece) < 20:
-            continue
-        chunks.append({"text": " ".join(piece), "source": source})
-    return chunks
-
-
-def build_chunks():
-    chunks = []
-    seen_names = set()
-
-    for f in sorted(NOTES_DIR.glob("*.docx")):
-        text = extract_docx(f)
-        if text:
-            chunks.extend(chunk_text(text, f.name))
-        seen_names.add(f.name.lower())
-
-    for f in sorted(NOTES_DIR.glob("*.pdf")):
-        if f.name.lower() in seen_names:
-            continue
-        text = extract_pdf(f)
-        if text:
-            chunks.extend(chunk_text(text, f.name))
-        seen_names.add(f.name.lower())
-
-    if HANDBOOK_PDF.exists() and HANDBOOK_PDF.name.lower() not in seen_names:
-        text = extract_pdf(HANDBOOK_PDF)
-        if text:
-            chunks.extend(chunk_text(text, HANDBOOK_PDF.name))
-
-    return chunks
-
-
 def tokenize(text):
     return re.findall(r"[a-z0-9]+", text.lower())
 
@@ -142,12 +165,38 @@ def build_bm25(chunks):
     return BM25Okapi(corpus)
 
 
-def retrieve(bm25, chunks, query, top_k=5):
+def reciprocal_rank_fusion(rank_lists, k=60):
+    scores = {}
+    for ranked_ids in rank_lists:
+        for rank, doc_id in enumerate(ranked_ids):
+            scores[doc_id] = scores.get(doc_id, 0.0) + 1.0 / (k + rank + 1)
+    return sorted(scores.items(), key=lambda x: x[1], reverse=True)
+
+
+def retrieve(bm25, chunks, query, top_k=5, chunk_embeddings=None):
+    """Hybrid retrieval: BM25 (keyword) + semantic embeddings, combined via
+    Reciprocal Rank Fusion. Falls back to pure BM25 if no embeddings are available."""
     if bm25 is None or not chunks:
         return []
-    scores = bm25.get_scores(tokenize(query))
-    ranked = sorted(range(len(chunks)), key=lambda i: scores[i], reverse=True)[:top_k]
-    return [chunks[i] for i in ranked if scores[i] > 0]
+
+    candidate_k = min(len(chunks), max(top_k * 4, 20))
+
+    bm25_scores = bm25.get_scores(tokenize(query))
+    bm25_ranked = [
+        i for i in sorted(range(len(chunks)), key=lambda i: bm25_scores[i], reverse=True)
+        if bm25_scores[i] > 0
+    ][:candidate_k]
+
+    if chunk_embeddings is None:
+        return [chunks[i] for i in bm25_ranked[:top_k]]
+
+    query_vec = embed_texts([query])[0]
+    sims = chunk_embeddings @ query_vec
+    semantic_ranked = sorted(range(len(chunks)), key=lambda i: sims[i], reverse=True)[:candidate_k]
+
+    fused = reciprocal_rank_fusion([bm25_ranked, semantic_ranked])
+    top_ids = [doc_id for doc_id, _ in fused[:top_k]]
+    return [chunks[i] for i in top_ids]
 
 
 TECH_KEYWORDS = [
@@ -229,31 +278,72 @@ def load_profile():
     return text
 
 
-def generate_answer(client, bm25, chunks, question, profile_text=""):
-    context_chunks = retrieve(bm25, chunks, question)
+def generate_answer(client, bm25, chunks, question, profile_text="", chunk_embeddings=None):
+    """Returns the structured {answer, key_points, evidence, confidence} shape."""
+    context_chunks = retrieve(bm25, chunks, question, chunk_embeddings=chunk_embeddings)
     context = "\n\n---\n\n".join(
         f"[Source: {c['source']}]\n{c['text']}" for c in context_chunks
     )
     user_msg = f"Reference material:\n{context}\n\nQuestion: {question}"
     resp = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=500,
+        max_tokens=600,
         system=build_system_prompt(profile_text),
         messages=[{"role": "user", "content": user_msg}],
     )
-    return resp.content[0].text
+    return split_structured_response(resp.content[0].text, context_chunks)
+
+
+def build_chunks_from_folders():
+    """Walks Notes/ (any supported file type) and the handbook PDF, returning chunks
+    ready for store.add_chunks(..., origin="folder"). RealTime Interviews/ is mined
+    separately by extract_questions() for the practice bank, not indexed as content."""
+    all_chunks = []
+    seen_names = set()
+
+    if NOTES_DIR.exists():
+        for f in sorted(NOTES_DIR.glob("*")):
+            if not f.is_file() or f.suffix.lower() not in SUPPORTED_EXTENSIONS:
+                continue
+            sections = extract_sections_by_extension(f)
+            if sections:
+                all_chunks.extend(chunk_sections(sections, f.name))
+            else:
+                print(f"  ! no extractable text in {f.name}")
+            seen_names.add(f.name.lower())
+
+    if HANDBOOK_PDF.exists() and HANDBOOK_PDF.name.lower() not in seen_names:
+        sections = extract_sections_by_extension(HANDBOOK_PDF)
+        if sections:
+            all_chunks.extend(chunk_sections(sections, HANDBOOK_PDF.name))
+
+    return all_chunks
 
 
 def main():
+    store.init_db()
+
+    print("Clearing previously-indexed folder content (fresh rebuild; live uploads are untouched)...")
+    store.clear_origin("folder")
+
     print("Parsing documents...")
-    chunks = build_chunks()
+    chunks = build_chunks_from_folders()
     print(f"  {len(chunks)} chunks built")
 
-    print("Building BM25 index...")
-    bm25 = build_bm25(chunks)
-    with open(INDEX_CACHE, "wb") as f:
-        pickle.dump({"chunks": chunks, "bm25": bm25}, f)
-    print(f"  cached to {INDEX_CACHE}")
+    if chunks:
+        print(f"Computing semantic embeddings ({EMBEDDING_MODEL_NAME}, downloads the model on first run)...")
+        embeddings = embed_texts([c["text"] for c in chunks])
+        print(f"  {embeddings.shape[0]} embeddings, dim {embeddings.shape[1]}")
+        store.add_chunks(chunks, embeddings, origin="folder")
+
+        chunk_counts = {}
+        for c in chunks:
+            chunk_counts[c["source"]] = chunk_counts.get(c["source"], 0) + 1
+        for source, n in chunk_counts.items():
+            store.register_document(source, Path(source).suffix.lstrip("."), origin="folder", chunk_count=n)
+
+    total = store.count()
+    print(f"  index now has {total} chunks total (folder + any live uploads)")
 
     print("Extracting interview questions...")
     questions = extract_questions()
@@ -271,6 +361,9 @@ def main():
     profile_text = load_profile()
     print(f"Candidate profile loaded: {'yes' if profile_text else 'no (using generic calibration)'}")
 
+    all_chunks, chunk_embeddings = store.get_all_chunks()
+    bm25 = build_bm25(all_chunks) if all_chunks else None
+
     all_questions = list(dict.fromkeys(questions + COMMON_CPI_QUESTIONS))
     print(f"\nPre-generating answers for {len(all_questions)} questions "
           f"(this calls the Claude API once per new question)...")
@@ -286,7 +379,7 @@ def main():
         if q in cache:
             continue
         try:
-            answer = generate_answer(client, bm25, chunks, q, profile_text)
+            answer = generate_answer(client, bm25, all_chunks, q, profile_text, chunk_embeddings)
             cache[q] = answer
             print(f"  [{i}/{len(all_questions)}] cached: {q[:60]}")
         except Exception as e:

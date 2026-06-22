@@ -4,7 +4,7 @@ Run through this after any change to `build_index.py`, `server.py`, `auth.py`, o
 
 ## 1. Indexing (`python build_index.py`)
 - **Test:** Run the script fresh.
-- **Success:** Prints a non-zero chunk count, a question count, and either pre-generates answers (with a real key) or prints the "no API key" message without crashing.
+- **Success:** Prints a non-zero chunk count, a question count, and either pre-generates answers (with a real key) or prints the "no API key" message without crashing. Chunks land in Chroma (`DATA_DIR/index`) and a row per document appears in SQLite (`DATA_DIR/db/clearpilot.db`).
 - **Failure:** Any traceback during parsing → check the specific file named in the error; a 0 chunk count means `Notes/` or the Handbook PDF path is wrong.
 
 ## 2. Question bank quality
@@ -56,3 +56,23 @@ Run through this after any change to `build_index.py`, `server.py`, `auth.py`, o
 - **Test:** Push to `main`, wait for auto-deploy, hit `https://clearpilot.shop`.
 - **Success:** Deploy logs show no missing-dependency or missing-env-var tracebacks; login + ask + practice all work against the live URL.
 - **Failure:** 502 → check Build Logs for missing packages (`requirements.txt`); "Internal Server Error" after login → check Variables tab has all four secrets set and saved.
+
+## 12. Document upload (happy path)
+- **Test:** Upload a `.txt`, a `.md` with a couple of `#`/`##` headings, and a `.pdf` or `.docx` via the "Add a document" control.
+- **Success:** Status line reports a chunk count added; a follow-up question whose answer only exists in the new file returns a grounded answer citing the uploaded filename in `X-Sources`; the file appears under `DATA_DIR/files` and a row for it exists in SQLite.
+- **Failure:** Upload succeeds but the content never surfaces in answers → check `reload_index()` ran (rebuilt BM25 + refreshed `state["chunks"]`) and that `store.add_chunks()` didn't silently no-op.
+
+## 13. Upload validation / rejection paths
+- **Test:** Try uploading an unsupported type (e.g. `.exe`/`.zip`), an empty file, an oversized file (>20MB), and a file whose name contains `../` path-traversal segments.
+- **Success:** Each is rejected with a 400 and a clear `detail` message; no stray file is left in `DATA_DIR/files` for a rejected upload; no crash/500.
+- **Failure:** A rejected upload still leaves a file on disk → check the `dest_path.unlink()` cleanup paths in `/api/upload`.
+
+## 14. Restart persistence
+- **Test:** Upload a document, restart the server (`uvicorn` reload or a fresh process), ask a question only answerable from that upload.
+- **Success:** The content is still searchable - proves Chroma + SQLite persistence under `DATA_DIR` worked, with no manual reindex step needed.
+- **Failure:** Content is gone after restart → confirm `DATA_DIR` resolves to the same path across restarts and Chroma's `PersistentClient` is pointed at `DATA_DIR/index`.
+
+## 15. Rebuild doesn't duplicate or wipe uploads
+- **Test:** Upload a document, then run `python build_index.py` again.
+- **Success:** The uploaded document is still present and not duplicated; `Notes/`/handbook chunks are refreshed (not doubled) either.
+- **Failure:** Chunk counts grow on every rerun → `store.clear_origin("folder")` isn't being called, or uploads are getting swept up in the "folder" clear by mistake.

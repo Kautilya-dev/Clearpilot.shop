@@ -27,6 +27,7 @@
         </div>
         <div id="status" class="form-text"></div>
         <div id="answerBox" class="mt-3"></div>
+        <div id="answerStructured" class="mt-2"></div>
         <div id="debugInfo" class="form-text mt-2 border-top border-secondary-subtle pt-2 d-none"></div>
       </div>
     </section>
@@ -39,7 +40,19 @@
         </div>
         <div id="practiceQuestion" class="fw-semibold mb-2"></div>
         <div id="practiceAnswer"></div>
+        <div id="practiceStructured" class="mt-2"></div>
         <div id="practiceDebugInfo" class="form-text mt-2 border-top border-secondary-subtle pt-2 d-none"></div>
+      </div>
+    </section>
+
+    <section class="card bg-body-tertiary border-secondary-subtle mb-4">
+      <div class="card-body">
+        <h2 class="h6 text-secondary mb-2">Add a document</h2>
+        <div class="input-group">
+          <input id="uploadInput" type="file" class="form-control" accept=".pdf,.docx,.txt,.html,.htm,.md,.markdown">
+          <button id="uploadBtn" class="btn btn-outline-primary" type="button">Upload</button>
+        </div>
+        <div id="uploadStatus" class="form-text"></div>
       </div>
     </section>
 

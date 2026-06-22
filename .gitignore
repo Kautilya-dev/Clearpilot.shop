@@ -2,3 +2,11 @@
 profile.txt
 __pycache__/
 *.pyc
+index_cache.pkl
+
+# DATA_DIR contents (defaults to this folder for local dev; on Railway this should
+# be a mounted Volume instead) - uploaded files, Chroma index, SQLite db, text cache.
+/files/
+/index/
+/db/
+/cache/

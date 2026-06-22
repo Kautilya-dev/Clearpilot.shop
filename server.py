@@ -1,6 +1,5 @@
 import os
 import json
-import pickle
 import random
 import re
 from contextlib import asynccontextmanager
@@ -8,36 +7,45 @@ from pathlib import Path
 
 import anthropic
 from dotenv import load_dotenv
-from fastapi import FastAPI, Form
+from fastapi import FastAPI, Form, UploadFile, File, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from build_index import build_system_prompt, load_profile, retrieve, tokenize
+import store
+from build_index import (
+    build_system_prompt, load_profile, retrieve, tokenize, build_bm25, embed_texts,
+    STRUCTURED_TRAILER_SENTINEL, parse_structured_trailer, build_evidence,
+)
+from parsers import SUPPORTED_EXTENSIONS, extract_sections_by_extension
+from chunking import chunk_sections
 from auth import AuthMiddleware, login_get, login_post
 
 load_dotenv()
 
 APP_DIR = Path(__file__).resolve().parent
-INDEX_CACHE = APP_DIR / "index_cache.pkl"
 QUESTIONS_BANK = APP_DIR / "questions_bank.json"
 ANSWER_CACHE = APP_DIR / "answer_cache.json"
 
 MAX_HISTORY_TURNS = 4
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20MB
 
 state = {}
 
 
+def reload_index():
+    """Refreshes the in-memory chunks/embeddings/BM25 from the Chroma store - called
+    at startup and after every successful upload."""
+    chunks, embeddings = store.get_all_chunks()
+    state["chunks"] = chunks
+    state["chunk_embeddings"] = embeddings
+    state["bm25"] = build_bm25(chunks) if chunks else None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if INDEX_CACHE.exists():
-        with open(INDEX_CACHE, "rb") as f:
-            data = pickle.load(f)
-        state["chunks"] = data["chunks"]
-        state["bm25"] = data["bm25"]
-    else:
-        state["chunks"] = []
-        state["bm25"] = None
+    store.init_db()
+    reload_index()
 
     state["questions"] = (
         json.loads(QUESTIONS_BANK.read_text(encoding="utf-8")) if QUESTIONS_BANK.exists() else []
@@ -111,7 +119,9 @@ def find_cached_answer(question):
 
 
 def retrieve_chunks(question):
-    return retrieve(state["bm25"], state["chunks"], question) if state["bm25"] else []
+    if not state["bm25"]:
+        return []
+    return retrieve(state["bm25"], state["chunks"], question, chunk_embeddings=state["chunk_embeddings"])
 
 
 def build_user_message(question, chunks):
@@ -127,6 +137,18 @@ def sources_header_value(chunks):
     return "; ".join(seen) if seen else "none"
 
 
+def structured_wire_payload(structured):
+    """Wire format for a complete structured answer: prose, then the same sentinel
+    + JSON trailer the frontend already parses out of a live stream (see stream()
+    below) - so cache hits and live answers render identically on the client."""
+    trailer = json.dumps({
+        "key_points": structured.get("key_points", []),
+        "evidence": structured.get("evidence", []),
+        "confidence": structured.get("confidence", "medium"),
+    })
+    return f"{structured.get('answer', '')}\n{STRUCTURED_TRAILER_SENTINEL}{trailer}"
+
+
 @app.post("/api/ask")
 async def ask(req: AskRequest):
     question = req.question.strip()
@@ -138,8 +160,11 @@ async def ask(req: AskRequest):
     if not has_history:
         cached = find_cached_answer(question)
         if cached:
+            structured = cached if isinstance(cached, dict) else {
+                "answer": cached, "key_points": [], "evidence": [], "confidence": "medium",
+            }
             return StreamingResponse(
-                iter([cached]),
+                iter([structured_wire_payload(structured)]),
                 media_type="text/plain",
                 headers={"X-Answer-Source": "cache", "X-Sources": "cached-answer"},
             )
@@ -160,18 +185,58 @@ async def ask(req: AskRequest):
     messages.append({"role": "user", "content": build_user_message(question, chunks)})
 
     def stream():
-        full = []
+        # Stream prose tokens to the client as they arrive; once the model's sentinel
+        # shows up, stop forwarding (it's buffered instead) so the client never sees
+        # the raw trailer mid-stream - then send our own sentinel + the final
+        # structured JSON (with server-computed evidence) once generation finishes.
+        sentinel_len = len(STRUCTURED_TRAILER_SENTINEL)
+        pending = ""
+        prose_parts = []
+        structured_raw = ""
+        sentinel_found = False
+
         with client.messages.stream(
             model="claude-sonnet-4-6",
-            max_tokens=500,
+            max_tokens=600,
             system=state["system_prompt"],
             messages=messages,
         ) as s:
             for text in s.text_stream:
-                full.append(text)
-                yield text
+                if sentinel_found:
+                    structured_raw += text
+                    continue
+                pending += text
+                idx = pending.find(STRUCTURED_TRAILER_SENTINEL)
+                if idx != -1:
+                    prose_part = pending[:idx]
+                    if prose_part:
+                        prose_parts.append(prose_part)
+                        yield prose_part
+                    structured_raw = pending[idx + sentinel_len:]
+                    sentinel_found = True
+                    pending = ""
+                else:
+                    safe_len = max(0, len(pending) - (sentinel_len - 1))
+                    if safe_len:
+                        emit_part = pending[:safe_len]
+                        prose_parts.append(emit_part)
+                        yield emit_part
+                        pending = pending[safe_len:]
+
+        if not sentinel_found and pending:
+            prose_parts.append(pending)
+            yield pending
+
+        answer_text = "".join(prose_parts).strip()
+        key_points, confidence = parse_structured_trailer(structured_raw)
+        evidence = build_evidence(chunks)
+        structured = {"answer": answer_text, "key_points": key_points, "evidence": evidence, "confidence": confidence}
+
+        trailer = json.dumps({"key_points": key_points, "evidence": evidence, "confidence": confidence})
+        yield f"\n{STRUCTURED_TRAILER_SENTINEL}{trailer}"
+
         if not has_history:
-            state["answers"][question] = "".join(full)
+            state["answers"][question] = structured
             ANSWER_CACHE.write_text(json.dumps(state["answers"], indent=2), encoding="utf-8")
 
     return StreamingResponse(
@@ -187,6 +252,46 @@ def practice_question():
     if not questions:
         return {"question": None}
     return {"question": random.choice(questions)}
+
+
+@app.post("/api/upload")
+async def upload_document(file: UploadFile = File(...)):
+    original_name = Path(file.filename or "").name  # basename only - strips any path components
+    ext = Path(original_name).suffix.lower()
+
+    if not original_name or ext not in SUPPORTED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail="Supported file types: " + ", ".join(sorted(SUPPORTED_EXTENSIONS)),
+        )
+
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail="File is empty.")
+    if len(contents) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="File too large (max 20MB).")
+
+    dest_name = store.unique_filename(original_name)
+    dest_path = store.save_uploaded_file(dest_name, contents)
+
+    sections = extract_sections_by_extension(dest_path)
+    if not sections:
+        dest_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="Could not extract any text from this file.")
+
+    new_chunks = chunk_sections(sections, dest_name)
+    if not new_chunks:
+        dest_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="File parsed but produced no usable chunks (too short?).")
+
+    embeddings = embed_texts([c["text"] for c in new_chunks])
+    store.add_chunks(new_chunks, embeddings, origin="upload")
+    doc_id = store.register_document(dest_name, ext.lstrip("."), origin="upload", chunk_count=len(new_chunks))
+    store.cache_extracted_text(doc_id, "\n\n".join(s["text"] for s in sections))
+
+    reload_index()
+
+    return {"filename": dest_name, "chunks_added": len(new_chunks), "total_chunks": len(state["chunks"])}
 
 
 app.mount("/", StaticFiles(directory=str(APP_DIR / "static"), html=True), name="static")

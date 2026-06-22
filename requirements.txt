@@ -2,7 +2,11 @@ fastapi
 uvicorn[standard]
 anthropic
 rank-bm25
+fastembed
+numpy
 python-docx
 PyMuPDF
 python-dotenv
 python-multipart
+beautifulsoup4
+chromadb
