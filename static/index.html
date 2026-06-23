@@ -19,7 +19,11 @@
     }
   }
 </script>
-<link rel="stylesheet" href="style.css">
+<!-- The ?v=N on style.css/app.js below isn't decorative - clearpilot.shop is proxied
+     through Cloudflare, which caches .js/.css at the edge for 4h regardless of the
+     Cache-Control header the app sends. Bump v= on BOTH tags any time either file
+     changes, or the edge will keep serving the old one for up to 4 hours. -->
+<link rel="stylesheet" href="style.css?v=2">
 </head>
 <body class="bg-slate-50 text-slate-800 antialiased h-screen overflow-hidden">
 
@@ -147,7 +151,7 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=2"></script>
   <script>lucide.createIcons();</script>
 </body>
 </html>
