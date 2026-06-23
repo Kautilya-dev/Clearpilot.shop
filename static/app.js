@@ -24,20 +24,8 @@ const practiceDebugInfoEl = document.getElementById("practiceDebugInfo");
 let history = [];
 let chatMemory = []; // Ask-mode conversational memory only (not practice mode)
 let currentPracticeQuestion = null;
-let selectedModel = "sonnet";
 const MAX_MEMORY_TURNS = 4;
 const STRUCTURED_SENTINEL = "<<<CLEARPILOT_STRUCTURED>>>";
-
-function selectModel(btn) {
-  const group = document.getElementById("modelGroup");
-  group.querySelectorAll("button").forEach((b) => {
-    b.classList.remove("bg-brand-50", "text-brand-700");
-    b.classList.add("text-slate-500");
-  });
-  btn.classList.remove("text-slate-500");
-  btn.classList.add("bg-brand-50", "text-brand-700");
-  selectedModel = btn.dataset.model;
-}
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -83,14 +71,13 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-function renderDebugInfo(debugEl, source, sources, model) {
+function renderDebugInfo(debugEl, source, sources) {
   if (!source) {
     debugEl.classList.add("hidden");
     return;
   }
   const label = source === "cache" ? "instant cache hit" : source === "live" ? "live Claude call" : "error";
-  const modelLabel = model ? ` (${model})` : "";
-  debugEl.textContent = `Debug: ${label}${modelLabel} | sources used: ${sources || "none"}`;
+  debugEl.textContent = `Debug: ${label} | sources used: ${sources || "none"}`;
   debugEl.classList.remove("hidden");
 }
 
@@ -169,12 +156,11 @@ async function streamAnswer(question, targetEl, onDone, { sendHistory = false, d
     body: JSON.stringify({
       question,
       history: sendHistory ? chatMemory.slice(-MAX_MEMORY_TURNS) : [],
-      model: selectedModel,
     }),
   });
 
   if (debugEl) {
-    renderDebugInfo(debugEl, res.headers.get("X-Answer-Source"), res.headers.get("X-Sources"), res.headers.get("X-Model"));
+    renderDebugInfo(debugEl, res.headers.get("X-Answer-Source"), res.headers.get("X-Sources"));
   }
 
   const reader = res.body.getReader();

@@ -100,13 +100,6 @@ def logout_route():
     return logout()
 
 
-MODEL_OPTIONS = {
-    "sonnet": "claude-sonnet-4-6",
-    "haiku": "claude-haiku-4-5-20251001",
-}
-DEFAULT_MODEL_KEY = "sonnet"
-
-
 class HistoryTurn(BaseModel):
     question: str
     answer: str
@@ -115,7 +108,6 @@ class HistoryTurn(BaseModel):
 class AskRequest(BaseModel):
     question: str
     history: list[HistoryTurn] = []
-    model: str = DEFAULT_MODEL_KEY
 
 
 def normalize(q):
@@ -184,14 +176,8 @@ async def ask(req: AskRequest):
         return StreamingResponse(iter([""]), media_type="text/plain")
 
     has_history = len(req.history) > 0
-    model_key = req.model if req.model in MODEL_OPTIONS else DEFAULT_MODEL_KEY
-    model_name = MODEL_OPTIONS[model_key]
-    # The answer cache is keyed on question text alone (no model) - only use it for
-    # the default model, so picking the comparison model always gets a live answer
-    # instead of a cached answer from a different model.
-    use_cache = model_key == DEFAULT_MODEL_KEY
 
-    if not has_history and use_cache:
+    if not has_history:
         cached = find_cached_answer(question)
         if cached:
             structured = cached if isinstance(cached, dict) else {
@@ -200,19 +186,18 @@ async def ask(req: AskRequest):
             return StreamingResponse(
                 iter([structured_wire_payload(structured)]),
                 media_type="text/plain",
-                headers={"X-Answer-Source": "cache", "X-Sources": "cached-answer", "X-Model": model_key},
+                headers={"X-Answer-Source": "cache", "X-Sources": "cached-answer"},
             )
 
     t_request_start = time.perf_counter()
     client = state["client"]
     chunks = retrieve_chunks(question)
-    print(f"[ask] model={model_key} retrieval took {time.perf_counter() - t_request_start:.2f}s for: {question[:60]!r}")
+    print(f"[ask] retrieval took {time.perf_counter() - t_request_start:.2f}s for: {question[:60]!r}")
 
     if client is None:
         msg = "No ANTHROPIC_API_KEY configured on the server. Add one to .env and restart the server."
         return StreamingResponse(
-            iter([msg]), media_type="text/plain",
-            headers={"X-Answer-Source": "error", "X-Sources": "none", "X-Model": model_key},
+            iter([msg]), media_type="text/plain", headers={"X-Answer-Source": "error", "X-Sources": "none"}
         )
 
     messages = []
@@ -235,7 +220,7 @@ async def ask(req: AskRequest):
         first_token_seen = False
 
         with client.messages.stream(
-            model=model_name,
+            model="claude-sonnet-4-6",
             max_tokens=2000,
             system=[{"type": "text", "text": state["system_prompt"], "cache_control": {"type": "ephemeral", "ttl": "1h"}}],
             messages=messages,
@@ -285,14 +270,14 @@ async def ask(req: AskRequest):
         trailer = json.dumps({"key_points": key_points, "evidence": evidence, "confidence": confidence})
         yield f"\n{STRUCTURED_TRAILER_SENTINEL}{trailer}"
 
-        if not has_history and use_cache:
+        if not has_history:
             state["answers"][question] = structured
             ANSWER_CACHE.write_text(json.dumps(state["answers"], indent=2), encoding="utf-8")
 
     return StreamingResponse(
         stream(),
         media_type="text/plain",
-        headers={"X-Answer-Source": "live", "X-Sources": sources_header_value(chunks), "X-Model": model_key},
+        headers={"X-Answer-Source": "live", "X-Sources": sources_header_value(chunks)},
     )
 
 
