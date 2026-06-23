@@ -105,7 +105,7 @@
               </button>
             </div>
             <p id="status" class="text-xs text-slate-400 mb-2 h-4"></p>
-            <div id="answerBox" class="text-sm leading-relaxed"></div>
+            <div id="answerBox" class="markdown-body text-sm leading-relaxed"></div>
             <div id="answerStructured" class="mt-3"></div>
             <p id="debugInfo" class="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-100 hidden"></p>
           </section>
@@ -118,7 +118,7 @@
             </div>
             <div id="practiceQuestion" class="font-semibold mb-2"></div>
             <p id="practiceStatus" class="text-xs text-slate-400 mb-2 h-4"></p>
-            <div id="practiceAnswer" class="text-sm leading-relaxed"></div>
+            <div id="practiceAnswer" class="markdown-body text-sm leading-relaxed"></div>
             <div id="practiceStructured" class="mt-3"></div>
             <p id="practiceDebugInfo" class="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-100 hidden"></p>
           </section>
@@ -134,6 +134,8 @@
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
   <script src="app.js"></script>
   <script>lucide.createIcons();</script>

@@ -27,6 +27,15 @@ let currentPracticeQuestion = null;
 const MAX_MEMORY_TURNS = 4;
 const STRUCTURED_SENTINEL = "<<<CLEARPILOT_STRUCTURED>>>";
 
+marked.setOptions({ breaks: true, gfm: true });
+
+// Renders model output as formatted markdown (bold/headers/lists/tables) instead of
+// raw "**text**" syntax. DOMPurify strips any HTML the model's answer might contain -
+// answers are grounded in uploaded documents, which are untrusted input.
+function renderMarkdown(text) {
+  return DOMPurify.sanitize(marked.parse(text || ""));
+}
+
 function toggleSidebar(show) {
   document.getElementById("sidebar").classList.toggle("-translate-x-full", !show);
   document.getElementById("sidebarOverlay").classList.toggle("hidden", !show);
@@ -50,7 +59,7 @@ function renderHistory() {
       (item) => `
       <div class="bg-white border border-slate-200 rounded-xl p-3">
         <div class="history-item-q text-sm">${escapeHtml(item.question)}</div>
-        <div class="history-item-a">${escapeHtml(item.answer)}</div>
+        <div class="history-item-a markdown-body">${renderMarkdown(item.answer)}</div>
       </div>`
     )
     .join("");
@@ -136,7 +145,7 @@ function formatDuration(ms) {
 }
 
 async function streamAnswer(question, targetEl, onDone, { sendHistory = false, debugEl = null, structuredEl = null, statusTarget = statusEl } = {}) {
-  targetEl.textContent = "";
+  targetEl.innerHTML = "";
   if (structuredEl) structuredEl.innerHTML = "";
   statusTarget.classList.remove("text-emerald-600");
   statusTarget.classList.add("text-slate-400");
@@ -170,7 +179,7 @@ async function streamAnswer(question, targetEl, onDone, { sendHistory = false, d
     // Only ever display the part before the sentinel - the trailer is structured
     // data, not prose, and shouldn't flash on screen while still streaming in.
     const idx = full.indexOf(STRUCTURED_SENTINEL);
-    targetEl.textContent = idx === -1 ? full : full.slice(0, idx);
+    targetEl.innerHTML = renderMarkdown(idx === -1 ? full : full.slice(0, idx));
   }
 
   const finishedAt = performance.now();
@@ -180,7 +189,7 @@ async function streamAnswer(question, targetEl, onDone, { sendHistory = false, d
   statusTarget.classList.add("text-emerald-600");
 
   const { prose, structured } = splitStructured(full);
-  targetEl.textContent = prose;
+  targetEl.innerHTML = renderMarkdown(prose);
   if (structuredEl) renderStructured(structuredEl, structured);
 
   if (onDone) onDone(prose, structured);
