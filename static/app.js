@@ -221,9 +221,14 @@ questionInput.addEventListener("keydown", (e) => {
   }
 });
 
-// --- Mic input (push-to-talk via Web Speech API, not continuous listening) ---
+// --- Mic input (hands-free via Web Speech API): click once, ask any number of
+// questions back to back - each pause auto-submits, then listening resumes on its
+// own once the answer is done. Click again to stop. Speech-to-text only, no
+// spoken replies - answers stay on screen as text like everywhere else in the app.
 let recognition = null;
 let isRecording = false;
+let handsFreeMode = false;
+let stoppedByUser = false;
 
 const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -241,11 +246,15 @@ if (SpeechRecognitionImpl) {
     questionInput.value = transcript;
   };
 
-  recognition.onend = () => {
+  recognition.onend = async () => {
     isRecording = false;
     micBtn.classList.remove("recording");
-    if (questionInput.value.trim()) {
-      askQuestion(questionInput.value);
+    const question = questionInput.value.trim();
+    if (question) {
+      await askQuestion(question);
+    }
+    if (handsFreeMode && !stoppedByUser) {
+      startListening();
     }
   };
 
@@ -253,18 +262,32 @@ if (SpeechRecognitionImpl) {
     isRecording = false;
     micBtn.classList.remove("recording");
     statusEl.textContent = `Mic error: ${e.error}`;
+    // "no-speech" just means a quiet pause between questions - keep the hands-free
+    // loop going. Anything else (permission denied, no mic, etc.) won't fix itself
+    // by retrying, so give up the loop.
+    if (e.error !== "no-speech" && e.error !== "aborted") {
+      handsFreeMode = false;
+    }
   };
 
+  function startListening() {
+    questionInput.value = "";
+    statusEl.textContent = "Listening... click the mic to stop";
+    isRecording = true;
+    stoppedByUser = false;
+    micBtn.classList.add("recording");
+    recognition.start();
+  }
+
   micBtn.addEventListener("click", () => {
-    if (isRecording) {
+    if (isRecording || handsFreeMode) {
+      stoppedByUser = true;
+      handsFreeMode = false;
       recognition.stop();
       return;
     }
-    questionInput.value = "";
-    statusEl.textContent = "Listening...";
-    isRecording = true;
-    micBtn.classList.add("recording");
-    recognition.start();
+    handsFreeMode = true;
+    startListening();
   });
 } else {
   micBtn.disabled = true;
