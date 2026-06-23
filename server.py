@@ -92,6 +92,21 @@ app = FastAPI(lifespan=lifespan)
 app.add_middleware(AuthMiddleware)
 
 
+@app.middleware("http")
+async def no_cache_static_files(request, call_next):
+    """Static files (index.html/app.js/style.css) change on every deploy. Without
+    this, browsers can silently keep serving a stale app.js against a freshly
+    deployed index.html - exactly the kind of mismatch that throws confusing
+    "cannot read property of null" errors for elements that no longer exist.
+    "no-cache" doesn't disable caching - it just forces a conditional revalidation
+    (If-None-Match/If-Modified-Since) before reusing a cached copy, so unchanged
+    files still get a cheap 304 and changed ones are never served stale."""
+    response = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.get("/login")
 def login_route():
     return login_get()
