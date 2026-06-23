@@ -4,9 +4,10 @@ __pycache__/
 *.pyc
 index_cache.pkl
 
-# DATA_DIR contents (defaults to this folder for local dev; on Railway this should
-# be a mounted Volume instead) - uploaded files, Chroma index, SQLite db, text cache.
+# Raw uploaded files and cached extracted text - not source-controlled.
+# /index/ and /db/ ARE committed on purpose: Railway only deploys this git repo,
+# and Notes/the handbook PDF live one level up (outside the repo, never pushed),
+# so the index has to ship pre-built rather than rebuilt on the server. Rerun
+# build_index.py locally and commit the result whenever source content changes.
 /files/
-/index/
-/db/
 /cache/

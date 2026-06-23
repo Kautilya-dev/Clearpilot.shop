@@ -54,8 +54,8 @@ Run through this after any change to `build_index.py`, `server.py`, `auth.py`, o
 
 ## 11. Deployment (Railway)
 - **Test:** Push to `main`, wait for auto-deploy, hit `https://clearpilot.shop`.
-- **Success:** Deploy logs show no missing-dependency or missing-env-var tracebacks; login + ask + practice all work against the live URL.
-- **Failure:** 502 → check Build Logs for missing packages (`requirements.txt`); "Internal Server Error" after login → check Variables tab has all four secrets set and saved.
+- **Success:** Deploy logs show no missing-dependency or missing-env-var tracebacks; the startup log line says `Loaded N chunks` with N matching what `python build_index.py` reported locally (not 0 - see Failure); login + ask + practice all work against the live URL.
+- **Failure:** 502 → check Build Logs for missing packages (`requirements.txt`); "Internal Server Error" after login → check Variables tab has all four secrets set and saved; `Loaded 0 chunks` → `index/`/`db/` weren't committed/pushed, or were re-added to `.gitignore` - see README's "Deploying" section.
 
 ## 12. Document upload (happy path)
 - **Test:** Upload a `.txt`, a `.md` with a couple of `#`/`##` headings, and a `.pdf` or `.docx` via the "Add a document" control.
@@ -73,6 +73,6 @@ Run through this after any change to `build_index.py`, `server.py`, `auth.py`, o
 - **Failure:** Content is gone after restart → confirm `DATA_DIR` resolves to the same path across restarts and Chroma's `PersistentClient` is pointed at `DATA_DIR/index`.
 
 ## 15. Rebuild doesn't duplicate or wipe uploads
-- **Test:** Upload a document, then run `python build_index.py` again.
+- **Test:** Upload a document, then run `python build_index.py` again (locally - this no longer runs on Railway, see README's "Deploying" section).
 - **Success:** The uploaded document is still present and not duplicated; `Notes/`/handbook chunks are refreshed (not doubled) either.
 - **Failure:** Chunk counts grow on every rerun → `store.clear_origin("folder")` isn't being called, or uploads are getting swept up in the "folder" clear by mistake.
