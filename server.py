@@ -64,6 +64,20 @@ async def lifespan(app: FastAPI):
     print(f"Loaded {len(state['chunks'])} chunks, {len(state['questions'])} questions, "
           f"{len(state['answers'])} cached answers. Profile set: {bool(profile_text)}. "
           f"API key configured: {state['client'] is not None}")
+
+    if state["client"] is not None:
+        try:
+            t0 = time.perf_counter()
+            state["client"].messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=1,
+                system=[{"type": "text", "text": state["system_prompt"], "cache_control": {"type": "ephemeral", "ttl": "1h"}}],
+                messages=[{"role": "user", "content": "hi"}],
+            )
+            print(f"Pre-warmed the prompt cache in {time.perf_counter() - t0:.2f}s "
+                  "- the first real question should already hit a warm cache.")
+        except Exception as e:
+            print(f"Cache pre-warm failed (non-fatal, first question will just be slower): {e}")
     yield
 
 
@@ -208,7 +222,7 @@ async def ask(req: AskRequest):
         with client.messages.stream(
             model="claude-sonnet-4-6",
             max_tokens=2000,
-            system=[{"type": "text", "text": state["system_prompt"], "cache_control": {"type": "ephemeral"}}],
+            system=[{"type": "text", "text": state["system_prompt"], "cache_control": {"type": "ephemeral", "ttl": "1h"}}],
             messages=messages,
         ) as s:
             for text in s.text_stream:
