@@ -37,25 +37,54 @@ def verify_session_token(token):
 
 
 LOGIN_HTML = """<!DOCTYPE html>
-<html lang="en" data-bs-theme="dark"><head>
+<html lang="en">
+<head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ClearPilot - Login</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: { extend: { fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui'] },
+      colors: { brand: { 50:'#f5f3ff',100:'#ede9fe',200:'#ddd6fe',300:'#c4b5fd',400:'#a78bfa',500:'#7c5cff',600:'#6d3bf2',700:'#5b21d6',800:'#4c1d95',900:'#3b0f80' } } } }
+  }
+</script>
+<style>
+  body { font-family: "Inter", ui-sans-serif, system-ui, sans-serif; }
+  .brand-panel { background: radial-gradient(120% 120% at 0% 0%, #6d3bf2 0%, #4c1d95 60%, #1e1b4b 100%); }
+  .btn-primary { background: linear-gradient(90deg, #6d3bf2, #7c5cff); color: #fff; transition: filter .15s ease; }
+  .btn-primary:hover { filter: brightness(1.08); }
+</style>
 </head>
-<body class="d-flex align-items-center justify-content-center" style="height:100vh;">
-  <form method="post" action="/login" class="card bg-body-tertiary border-secondary-subtle p-4" style="width:300px;">
-    <h1 class="h5 mb-3">ClearPilot</h1>
-    {error_html}
-    <input type="password" name="password" class="form-control mb-3" placeholder="Password" autofocus />
-    <button type="submit" class="btn btn-primary w-100">Unlock</button>
-  </form>
-</body></html>
+<body class="brand-panel min-h-screen flex items-center justify-center px-4">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-8">
+    <div class="flex items-center gap-2.5 mb-6">
+      <span class="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-600 to-brand-400 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">CP</span>
+      <div>
+        <div class="font-extrabold text-lg leading-tight">ClearPilot</div>
+        <div class="text-xs text-slate-400 leading-tight">SAP CPI Study Assistant</div>
+      </div>
+    </div>
+    __ERROR_HTML__
+    <form method="post" action="/login">
+      <label class="block text-sm font-medium text-slate-700 mb-1.5">Password</label>
+      <input type="password" name="password" autofocus placeholder="Enter password"
+        class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500">
+      <button type="submit" class="btn-primary w-full rounded-lg py-2.5 text-sm font-semibold">Unlock</button>
+    </form>
+  </div>
+</body>
+</html>
 """
 
 
 def login_page_html(error=False):
-    error_html = '<div class="alert alert-danger py-2 mb-3">Wrong password</div>' if error else ""
-    return LOGIN_HTML.format(error_html=error_html)
+    error_html = (
+        '<div class="text-sm bg-red-50 text-red-600 border border-red-100 rounded-lg px-3 py-2 mb-4">Wrong password</div>'
+        if error else ""
+    )
+    return LOGIN_HTML.replace("__ERROR_HTML__", error_html)
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -93,3 +122,9 @@ def login_post(password: str):
         )
         return resp
     return HTMLResponse(login_page_html(error=True), status_code=401)
+
+
+def logout():
+    resp = RedirectResponse("/login", status_code=302)
+    resp.delete_cookie(COOKIE_NAME)
+    return resp

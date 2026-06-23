@@ -1,21 +1,89 @@
-#answerBox,
-#practiceAnswer {
-  white-space: pre-wrap;
-  line-height: 1.5;
+/* ClearPilot - Synapse design system on top of Tailwind utilities */
+
+:root {
+  --brand-50: #f5f3ff;
+  --brand-100: #ede9fe;
+  --brand-500: #7c5cff;
+  --brand-600: #6d3bf2;
+  --brand-700: #5b21d6;
 }
 
-#micBtn.recording {
-  background-color: var(--bs-danger);
-  border-color: var(--bs-danger);
-  color: white;
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+*::-webkit-scrollbar { width: 6px; height: 6px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 999px; }
+*::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
+
+body { font-family: "Inter", ui-sans-serif, system-ui, sans-serif; }
+
+#answerBox, #practiceAnswer { white-space: pre-wrap; line-height: 1.6; }
+
+/* Buttons */
+.btn-primary {
+  background: linear-gradient(90deg, var(--brand-600), var(--brand-500));
+  color: #fff;
+  transition: filter .15s ease, transform .1s ease;
+}
+.btn-primary:hover { filter: brightness(1.08); }
+.btn-primary:active { transform: translateY(1px); }
+.btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Sidebar nav item */
+.nav-item {
+  display: flex; align-items: center; gap: .65rem;
+  padding: .55rem .75rem;
+  border-radius: .6rem;
+  color: #cbd5e1;
+  font-size: .875rem;
+  font-weight: 500;
+  transition: background-color .15s ease, color .15s ease;
+}
+.nav-item:hover { background: rgba(255,255,255,0.06); color: #fff; }
+.nav-item.active { background: rgba(124,92,255,0.18); color: #fff; }
+
+/* Upload dropzone */
+.dropzone {
+  border: 1.5px dashed #d8d4f5;
+  transition: border-color .15s ease, background-color .15s ease;
+}
+.dropzone.drag-over,
+.dropzone:hover {
+  border-color: var(--brand-500);
+  background-color: var(--brand-50);
 }
 
-.history-item-q {
-  font-weight: 600;
+/* Citation chip */
+.citation-chip {
+  display: inline-flex; align-items: center; gap: .3rem;
+  font-size: .7rem;
+  padding: .2rem .55rem;
+  border-radius: 999px;
+  background: var(--brand-50);
+  color: var(--brand-700);
+  border: 1px solid var(--brand-100);
 }
 
-.history-item-a {
-  white-space: pre-wrap;
-  color: var(--bs-secondary-color);
-  font-size: 0.9rem;
+/* Mic button recording state */
+.mic-btn { position: relative; transition: background-color .15s ease, color .15s ease; }
+.mic-btn.recording {
+  background: #ef4444 !important;
+  color: #fff !important;
 }
+.mic-btn.recording::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 999px;
+  border: 2px solid #ef4444;
+  animation: mic-pulse 1.4s infinite ease-out;
+}
+@keyframes mic-pulse {
+  0% { transform: scale(0.9); opacity: .7; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+.history-item-q { font-weight: 600; }
+.history-item-a { white-space: pre-wrap; color: #64748b; font-size: .875rem; }

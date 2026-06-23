@@ -1,7 +1,8 @@
-const modeAskBtn = document.getElementById("modeAskBtn");
-const modePracticeBtn = document.getElementById("modePracticeBtn");
+const navAskBtn = document.getElementById("navAskBtn");
+const navPracticeBtn = document.getElementById("navPracticeBtn");
 const askMode = document.getElementById("askMode");
 const practiceMode = document.getElementById("practiceMode");
+const pageTitleEl = document.getElementById("pageTitle");
 
 const micBtn = document.getElementById("micBtn");
 const questionInput = document.getElementById("questionInput");
@@ -26,18 +27,20 @@ let currentPracticeQuestion = null;
 const MAX_MEMORY_TURNS = 4;
 const STRUCTURED_SENTINEL = "<<<CLEARPILOT_STRUCTURED>>>";
 
-function setMode(mode) {
-  const isAsk = mode === "ask";
-  modeAskBtn.classList.toggle("btn-primary", isAsk);
-  modeAskBtn.classList.toggle("btn-outline-primary", !isAsk);
-  modePracticeBtn.classList.toggle("btn-primary", !isAsk);
-  modePracticeBtn.classList.toggle("btn-outline-primary", isAsk);
-  askMode.classList.toggle("d-none", !isAsk);
-  practiceMode.classList.toggle("d-none", isAsk);
+function toggleSidebar(show) {
+  document.getElementById("sidebar").classList.toggle("-translate-x-full", !show);
+  document.getElementById("sidebarOverlay").classList.toggle("hidden", !show);
 }
 
-modeAskBtn.addEventListener("click", () => setMode("ask"));
-modePracticeBtn.addEventListener("click", () => setMode("practice"));
+function setMode(mode) {
+  const isAsk = mode === "ask";
+  navAskBtn.classList.toggle("active", isAsk);
+  navPracticeBtn.classList.toggle("active", !isAsk);
+  askMode.classList.toggle("hidden", !isAsk);
+  practiceMode.classList.toggle("hidden", isAsk);
+  pageTitleEl.textContent = isAsk ? "Ask" : "Practice";
+  if (window.innerWidth < 1024) toggleSidebar(false);
+}
 
 function renderHistory() {
   historyList.innerHTML = history
@@ -45,8 +48,8 @@ function renderHistory() {
     .reverse()
     .map(
       (item) => `
-      <div class="list-group-item bg-body-tertiary">
-        <div class="history-item-q">${escapeHtml(item.question)}</div>
+      <div class="bg-white border border-slate-200 rounded-xl p-3">
+        <div class="history-item-q text-sm">${escapeHtml(item.question)}</div>
         <div class="history-item-a">${escapeHtml(item.answer)}</div>
       </div>`
     )
@@ -61,12 +64,12 @@ function escapeHtml(str) {
 
 function renderDebugInfo(debugEl, source, sources) {
   if (!source) {
-    debugEl.classList.add("d-none");
+    debugEl.classList.add("hidden");
     return;
   }
   const label = source === "cache" ? "instant cache hit" : source === "live" ? "live Claude call" : "error";
   debugEl.textContent = `Debug: ${label} | sources used: ${sources || "none"}`;
-  debugEl.classList.remove("d-none");
+  debugEl.classList.remove("hidden");
 }
 
 function renderStructured(el, structured) {
@@ -78,7 +81,7 @@ function renderStructured(el, structured) {
 
   if (points.length) {
     const ul = document.createElement("ul");
-    ul.className = "mb-2 ps-3";
+    ul.className = "list-disc ml-4 space-y-1 text-sm text-slate-600 mb-3";
     points.forEach((p) => {
       const li = document.createElement("li");
       li.textContent = p;
@@ -89,10 +92,10 @@ function renderStructured(el, structured) {
 
   if (evidence.length) {
     const wrap = document.createElement("div");
-    wrap.className = "d-flex flex-wrap gap-1 mb-2";
+    wrap.className = "flex flex-wrap gap-1.5 mb-3";
     evidence.forEach((e) => {
       const chip = document.createElement("span");
-      chip.className = "badge text-bg-secondary";
+      chip.className = "citation-chip";
       chip.title = e.snippet || "";
       chip.textContent = e.section ? `${e.source} — ${e.section}` : e.source;
       wrap.appendChild(chip);
@@ -101,9 +104,13 @@ function renderStructured(el, structured) {
   }
 
   if (confidence) {
-    const variant = confidence === "high" ? "success" : confidence === "low" ? "danger" : "warning";
+    const styles = {
+      high: "bg-emerald-50 text-emerald-600",
+      medium: "bg-amber-50 text-amber-600",
+      low: "bg-red-50 text-red-600",
+    };
     const badge = document.createElement("span");
-    badge.className = `badge text-bg-${variant}`;
+    badge.className = `inline-flex text-xs font-semibold px-2.5 py-1 rounded-full ${styles[confidence] || styles.medium}`;
     badge.textContent = `Confidence: ${confidence}`;
     el.appendChild(badge);
   }
@@ -131,7 +138,8 @@ function formatDuration(ms) {
 async function streamAnswer(question, targetEl, onDone, { sendHistory = false, debugEl = null, structuredEl = null, statusTarget = statusEl } = {}) {
   targetEl.textContent = "";
   if (structuredEl) structuredEl.innerHTML = "";
-  statusTarget.classList.remove("text-success");
+  statusTarget.classList.remove("text-emerald-600");
+  statusTarget.classList.add("text-slate-400");
   const t0 = performance.now();
   const res = await fetch("/api/ask", {
     method: "POST",
@@ -168,7 +176,8 @@ async function streamAnswer(question, targetEl, onDone, { sendHistory = false, d
   const finishedAt = performance.now();
   const startedIn = (firstChunkAt ?? finishedAt) - t0;
   statusTarget.textContent = `Started in ${formatDuration(startedIn)} · finished in ${formatDuration(finishedAt - t0)}`;
-  statusTarget.classList.add("text-success");
+  statusTarget.classList.remove("text-slate-400");
+  statusTarget.classList.add("text-emerald-600");
 
   const { prose, structured } = splitStructured(full);
   targetEl.textContent = prose;
@@ -258,8 +267,8 @@ async function loadNextPracticeQuestion() {
   practiceAnswerEl.textContent = "";
   practiceStructuredEl.innerHTML = "";
   practiceStatusEl.textContent = "";
-  practiceStatusEl.classList.remove("text-success");
-  practiceDebugInfoEl.classList.add("d-none");
+  practiceStatusEl.classList.remove("text-emerald-600");
+  practiceDebugInfoEl.classList.add("hidden");
   revealBtn.disabled = true;
   const res = await fetch("/api/practice-question");
   const data = await res.json();
@@ -287,16 +296,11 @@ revealBtn.addEventListener("click", () => {
 
 // --- Document upload ---
 const uploadInput = document.getElementById("uploadInput");
-const uploadBtn = document.getElementById("uploadBtn");
 const uploadStatusEl = document.getElementById("uploadStatus");
+const sidebarDropzone = document.getElementById("sidebarDropzone");
 
-uploadBtn.addEventListener("click", async () => {
-  const file = uploadInput.files[0];
-  if (!file) {
-    uploadStatusEl.textContent = "Choose a file first.";
-    return;
-  }
-  uploadBtn.disabled = true;
+async function uploadFile(file) {
+  if (!file) return;
   uploadStatusEl.textContent = "Uploading and indexing...";
 
   const formData = new FormData();
@@ -309,11 +313,19 @@ uploadBtn.addEventListener("click", async () => {
       uploadStatusEl.textContent = `Error: ${data.detail || "upload failed"}`;
     } else {
       uploadStatusEl.textContent = `Added "${data.filename}" - ${data.chunks_added} chunks (total ${data.total_chunks}).`;
-      uploadInput.value = "";
     }
   } catch (e) {
     uploadStatusEl.textContent = `Error: ${e.message}`;
-  } finally {
-    uploadBtn.disabled = false;
   }
-});
+}
+
+function handleFileSelect(event) {
+  uploadFile(event.target.files[0]);
+  event.target.value = "";
+}
+
+function handleDrop(event) {
+  event.preventDefault();
+  sidebarDropzone.classList.remove("drag-over");
+  uploadFile(event.dataTransfer.files[0]);
+}

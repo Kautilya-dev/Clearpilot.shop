@@ -19,7 +19,7 @@ from build_index import (
 )
 from parsers import SUPPORTED_EXTENSIONS, extract_sections_by_extension
 from chunking import chunk_sections
-from auth import AuthMiddleware, login_get, login_post
+from auth import AuthMiddleware, login_get, login_post, logout
 
 load_dotenv()
 
@@ -78,6 +78,11 @@ def login_route():
 @app.post("/login")
 def login_submit(password: str = Form(...)):
     return login_post(password)
+
+
+@app.get("/logout")
+def logout_route():
+    return logout()
 
 
 class HistoryTurn(BaseModel):
