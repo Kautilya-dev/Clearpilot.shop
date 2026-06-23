@@ -107,14 +107,13 @@ def logout_route():
     return logout()
 
 
-class HistoryTurn(BaseModel):
-    question: str
-    answer: str
-
-
 class AskRequest(BaseModel):
     question: str
-    history: list[HistoryTurn] = []
+    conversation_id: str | None = None
+
+
+class RenameConversationRequest(BaseModel):
+    title: str
 
 
 def normalize(q):
@@ -182,7 +181,10 @@ async def ask(req: AskRequest):
     if not question:
         return StreamingResponse(iter([""]), media_type="text/plain")
 
-    has_history = len(req.history) > 0
+    conversation_id = req.conversation_id
+    # A conversation's first turn is still cache-eligible (no real context yet) -
+    # only skip the cache once there's actual prior conversation to consider.
+    has_history = conversation_id is not None and store.has_messages(conversation_id)
 
     if not has_history:
         cached = find_cached_answer(question)
@@ -208,9 +210,10 @@ async def ask(req: AskRequest):
         )
 
     messages = []
-    for turn in req.history[-MAX_HISTORY_TURNS:]:
-        messages.append({"role": "user", "content": turn.question})
-        messages.append({"role": "assistant", "content": turn.answer})
+    if conversation_id:
+        for turn in store.get_recent_messages(conversation_id, limit=MAX_HISTORY_TURNS):
+            messages.append({"role": "user", "content": turn["question"]})
+            messages.append({"role": "assistant", "content": turn["answer"]})
     messages.append({"role": "user", "content": build_user_message(question, chunks)})
 
     def stream():
@@ -277,7 +280,19 @@ async def ask(req: AskRequest):
         trailer = json.dumps({"key_points": key_points, "evidence": evidence, "confidence": confidence})
         yield f"\n{STRUCTURED_TRAILER_SENTINEL}{trailer}"
 
-        if not has_history:
+        if conversation_id:
+            try:
+                store.add_message(conversation_id, question, answer_text, key_points, evidence, confidence)
+                if not has_history:  # this was the conversation's first turn
+                    conv = store.get_conversation(conversation_id)
+                    if conv and conv["title"] == store.DEFAULT_CONVERSATION_TITLE:
+                        store.rename_conversation(conversation_id, question[:60])
+            except Exception as e:
+                # Single-user app, not worth a hard error - e.g. the conversation was
+                # deleted in another tab mid-request. The answer still streamed fine,
+                # it just won't be saved.
+                print(f"[ask] failed to persist message to conversation {conversation_id}: {e}")
+        elif not has_history:
             state["answers"][question] = structured
             ANSWER_CACHE.write_text(json.dumps(state["answers"], indent=2), encoding="utf-8")
 
@@ -334,6 +349,42 @@ async def upload_document(file: UploadFile = File(...)):
     reload_index()
 
     return {"filename": dest_name, "chunks_added": len(new_chunks), "total_chunks": len(state["chunks"])}
+
+
+@app.post("/api/conversations")
+def create_conversation_route():
+    conv_id = store.create_conversation()
+    return store.get_conversation(conv_id)
+
+
+@app.get("/api/conversations")
+def list_conversations_route():
+    return store.list_conversations()
+
+
+@app.get("/api/conversations/{conversation_id}")
+def get_conversation_route(conversation_id: str):
+    conv = store.get_conversation(conversation_id)
+    if conv is None:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    return conv
+
+
+@app.patch("/api/conversations/{conversation_id}")
+def rename_conversation_route(conversation_id: str, req: RenameConversationRequest):
+    title = req.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Title cannot be empty.")
+    if not store.rename_conversation(conversation_id, title):
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    return {"ok": True}
+
+
+@app.delete("/api/conversations/{conversation_id}")
+def delete_conversation_route(conversation_id: str):
+    if not store.delete_conversation(conversation_id):
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    return {"ok": True}
 
 
 app.mount("/", StaticFiles(directory=str(APP_DIR / "static"), html=True), name="static")
