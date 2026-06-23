@@ -2,6 +2,7 @@ import os
 import json
 import random
 import re
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -174,8 +175,10 @@ async def ask(req: AskRequest):
                 headers={"X-Answer-Source": "cache", "X-Sources": "cached-answer"},
             )
 
+    t_request_start = time.perf_counter()
     client = state["client"]
     chunks = retrieve_chunks(question)
+    print(f"[ask] retrieval took {time.perf_counter() - t_request_start:.2f}s for: {question[:60]!r}")
 
     if client is None:
         msg = "No ANTHROPIC_API_KEY configured on the server. Add one to .env and restart the server."
@@ -199,6 +202,8 @@ async def ask(req: AskRequest):
         prose_parts = []
         structured_raw = ""
         sentinel_found = False
+        t_claude_start = time.perf_counter()
+        first_token_seen = False
 
         with client.messages.stream(
             model="claude-sonnet-4-6",
@@ -207,6 +212,10 @@ async def ask(req: AskRequest):
             messages=messages,
         ) as s:
             for text in s.text_stream:
+                if not first_token_seen:
+                    first_token_seen = True
+                    print(f"[ask] Claude first token after {time.perf_counter() - t_claude_start:.2f}s "
+                          f"({time.perf_counter() - t_request_start:.2f}s total since request start)")
                 if sentinel_found:
                     structured_raw += text
                     continue

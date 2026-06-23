@@ -174,7 +174,7 @@ def reciprocal_rank_fusion(rank_lists, k=60):
     return sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
 
-def retrieve(bm25, chunks, query, top_k=5, chunk_embeddings=None):
+def retrieve(bm25, chunks, query, top_k=3, chunk_embeddings=None):
     """Hybrid retrieval: BM25 (keyword) + semantic embeddings, combined via
     Reciprocal Rank Fusion. Falls back to pure BM25 if no embeddings are available."""
     if bm25 is None or not chunks:
