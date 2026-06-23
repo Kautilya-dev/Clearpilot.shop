@@ -197,7 +197,7 @@ async def ask(req: AskRequest):
 
         with client.messages.stream(
             model="claude-sonnet-4-6",
-            max_tokens=600,
+            max_tokens=2000,
             system=state["system_prompt"],
             messages=messages,
         ) as s:

@@ -288,7 +288,7 @@ def generate_answer(client, bm25, chunks, question, profile_text="", chunk_embed
     user_msg = f"Reference material:\n{context}\n\nQuestion: {question}"
     resp = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=600,
+        max_tokens=2000,
         system=build_system_prompt(profile_text),
         messages=[{"role": "user", "content": user_msg}],
     )
