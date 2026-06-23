@@ -11,6 +11,7 @@ running app's /api/upload is left untouched.
 import os
 import json
 import re
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -350,6 +351,11 @@ def main():
     with open(QUESTIONS_BANK, "w", encoding="utf-8") as f:
         json.dump(questions, f, indent=2)
     print(f"  {len(questions)} questions -> {QUESTIONS_BANK}")
+
+    if "--no-cache" in sys.argv:
+        print("\n--no-cache passed - skipping answer cache pre-generation "
+              "(used for Railway's release step, to keep deploys fast/predictable).")
+        return
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key or "your-new" in api_key:
