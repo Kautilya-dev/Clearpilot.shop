@@ -48,6 +48,13 @@ async def lifespan(app: FastAPI):
     store.init_db()
     reload_index()
 
+    try:
+        t0 = time.perf_counter()
+        embed_texts(["warmup"])  # forces the ONNX model to download/load now, not on the first real question
+        print(f"Pre-loaded the embedding model in {time.perf_counter() - t0:.2f}s.")
+    except Exception as e:
+        print(f"Embedding model pre-load failed (non-fatal, first question will just be slower): {e}")
+
     state["questions"] = (
         json.loads(QUESTIONS_BANK.read_text(encoding="utf-8")) if QUESTIONS_BANK.exists() else []
     )
