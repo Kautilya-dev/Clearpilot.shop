@@ -14,6 +14,7 @@ const historyList = document.getElementById("historyList");
 const nextQBtn = document.getElementById("nextQBtn");
 const revealBtn = document.getElementById("revealBtn");
 const practiceQuestionEl = document.getElementById("practiceQuestion");
+const practiceStatusEl = document.getElementById("practiceStatus");
 const practiceAnswerEl = document.getElementById("practiceAnswer");
 const practiceStructuredEl = document.getElementById("practiceStructured");
 const debugInfoEl = document.getElementById("debugInfo");
@@ -123,9 +124,14 @@ function splitStructured(full) {
   return { prose, structured };
 }
 
-async function streamAnswer(question, targetEl, onDone, { sendHistory = false, debugEl = null, structuredEl = null } = {}) {
+function formatDuration(ms) {
+  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
+}
+
+async function streamAnswer(question, targetEl, onDone, { sendHistory = false, debugEl = null, structuredEl = null, statusTarget = statusEl } = {}) {
   targetEl.textContent = "";
   if (structuredEl) structuredEl.innerHTML = "";
+  statusTarget.classList.remove("text-success");
   const t0 = performance.now();
   const res = await fetch("/api/ask", {
     method: "POST",
@@ -143,14 +149,14 @@ async function streamAnswer(question, targetEl, onDone, { sendHistory = false, d
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let full = "";
-  let firstChunk = true;
+  let firstChunkAt = null;
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    if (firstChunk) {
-      statusEl.textContent = `First response in ${Math.round(performance.now() - t0)}ms`;
-      firstChunk = false;
+    if (firstChunkAt === null) {
+      firstChunkAt = performance.now();
+      statusTarget.textContent = `Started responding in ${formatDuration(firstChunkAt - t0)}...`;
     }
     full += decoder.decode(value, { stream: true });
     // Only ever display the part before the sentinel - the trailer is structured
@@ -158,6 +164,11 @@ async function streamAnswer(question, targetEl, onDone, { sendHistory = false, d
     const idx = full.indexOf(STRUCTURED_SENTINEL);
     targetEl.textContent = idx === -1 ? full : full.slice(0, idx);
   }
+
+  const finishedAt = performance.now();
+  const startedIn = (firstChunkAt ?? finishedAt) - t0;
+  statusTarget.textContent = `Started in ${formatDuration(startedIn)} · finished in ${formatDuration(finishedAt - t0)}`;
+  statusTarget.classList.add("text-success");
 
   const { prose, structured } = splitStructured(full);
   targetEl.textContent = prose;
@@ -246,6 +257,8 @@ if (SpeechRecognitionImpl) {
 async function loadNextPracticeQuestion() {
   practiceAnswerEl.textContent = "";
   practiceStructuredEl.innerHTML = "";
+  practiceStatusEl.textContent = "";
+  practiceStatusEl.classList.remove("text-success");
   practiceDebugInfoEl.classList.add("d-none");
   revealBtn.disabled = true;
   const res = await fetch("/api/practice-question");
@@ -260,6 +273,7 @@ nextQBtn.addEventListener("click", loadNextPracticeQuestion);
 revealBtn.addEventListener("click", () => {
   if (!currentPracticeQuestion) return;
   revealBtn.disabled = true;
+  practiceStatusEl.textContent = "Thinking...";
   streamAnswer(
     currentPracticeQuestion,
     practiceAnswerEl,
@@ -267,7 +281,7 @@ revealBtn.addEventListener("click", () => {
       history.push({ question: currentPracticeQuestion, answer: answerText });
       renderHistory();
     },
-    { sendHistory: false, debugEl: practiceDebugInfoEl, structuredEl: practiceStructuredEl }
+    { sendHistory: false, debugEl: practiceDebugInfoEl, structuredEl: practiceStructuredEl, statusTarget: practiceStatusEl }
   );
 });
 
