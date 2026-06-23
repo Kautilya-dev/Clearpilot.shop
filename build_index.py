@@ -289,7 +289,7 @@ def generate_answer(client, bm25, chunks, question, profile_text="", chunk_embed
     resp = client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=2000,
-        system=build_system_prompt(profile_text),
+        system=[{"type": "text", "text": build_system_prompt(profile_text), "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": user_msg}],
     )
     return split_structured_response(resp.content[0].text, context_chunks)

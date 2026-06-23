@@ -208,7 +208,7 @@ async def ask(req: AskRequest):
         with client.messages.stream(
             model="claude-sonnet-4-6",
             max_tokens=2000,
-            system=state["system_prompt"],
+            system=[{"type": "text", "text": state["system_prompt"], "cache_control": {"type": "ephemeral"}}],
             messages=messages,
         ) as s:
             for text in s.text_stream:
@@ -236,6 +236,13 @@ async def ask(req: AskRequest):
                         prose_parts.append(emit_part)
                         yield emit_part
                         pending = pending[safe_len:]
+
+            try:
+                usage = s.get_final_message().usage
+                print(f"[ask] cache: {usage.cache_read_input_tokens} read, "
+                      f"{usage.cache_creation_input_tokens} created (of {usage.input_tokens} input tokens)")
+            except Exception as e:
+                print(f"[ask] couldn't read cache usage: {e}")
 
         if not sentinel_found and pending:
             prose_parts.append(pending)
