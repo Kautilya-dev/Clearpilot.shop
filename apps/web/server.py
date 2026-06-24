@@ -5,12 +5,13 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from config import settings
-from routers import auth, pages
+from routers import admin, auth, pages
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(title="ClearPilot API")
 app.include_router(auth.router)
+app.include_router(admin.router)
 app.include_router(pages.router)
 app.mount("/assets", StaticFiles(directory=_STATIC_DIR), name="assets")
 

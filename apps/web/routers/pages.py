@@ -15,6 +15,7 @@ _ROUTES = {
     "/login": "login.html",
     "/register": "register.html",
     "/account": "account.html",
+    "/admin": "admin.html",
 }
 
 for path, filename in _ROUTES.items():
