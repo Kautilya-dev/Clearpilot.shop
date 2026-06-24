@@ -32,6 +32,30 @@ class Material(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class KnowledgeBaseEntry(Base):
+    __tablename__ = "kb_entries"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(String, nullable=False, default="")
+    tags: Mapped[str] = mapped_column(String, nullable=False, default="")  # comma-separated - simple, no separate table needed yet
+    use_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class HistoryEntry(Base):
+    __tablename__ = "history_entries"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+    sources: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # JSON-encoded list of {title, breadcrumb}
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 class Document(Base):
     """Shared, system-wide grounding corpus (official SAP docs) - not scoped to a user.
     Ingested once via scripts/ingest_sap_docs.py, read-only at request time.

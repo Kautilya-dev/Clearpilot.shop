@@ -1,3 +1,4 @@
+import json
 from typing import Optional
 from uuid import UUID
 
@@ -7,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.base import get_db
-from db.models import User
+from db.models import HistoryEntry, User
 from routers.auth import get_current_user
 from services.rag_service import build_system_prompt, generate_answer, get_active_material, retrieve_relevant_docs
 
@@ -52,7 +53,14 @@ async def ask(
     except httpx.HTTPError as e:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"AI provider unreachable: {e}")
 
-    return AskResponse(
+    sources = [SourceResponse(title=c.title, breadcrumb=c.breadcrumb) for c in doc_chunks]
+
+    db.add(HistoryEntry(
+        user_id=current_user.id,
+        question=body.question,
         answer=answer,
-        sources=[SourceResponse(title=c.title, breadcrumb=c.breadcrumb) for c in doc_chunks],
-    )
+        sources=json.dumps([s.model_dump() for s in sources]),
+    ))
+    await db.commit()
+
+    return AskResponse(answer=answer, sources=sources)
