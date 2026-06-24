@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ClearPilot — About</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<link rel="stylesheet" href="/assets/css/styles.css" />
+</head>
+<body class="bg-white text-gray-900 antialiased">
+
+<header class="border-b border-gray-200">
+  <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+    <a href="/" class="flex items-center gap-2 font-semibold text-lg">
+      <i data-lucide="compass" class="text-purple-600 w-6 h-6"></i>ClearPilot
+    </a>
+    <nav class="hidden md:flex items-center gap-8 text-sm font-medium text-gray-600">
+      <a href="/about" class="text-gray-900">About</a>
+      <a href="/download" class="hover:text-gray-900">Download</a>
+      <a href="/data" class="hover:text-gray-900">Data &amp; Privacy</a>
+    </nav>
+    <div id="nav-auth" class="flex items-center gap-3"></div>
+  </div>
+</header>
+
+<main class="max-w-3xl mx-auto px-6 py-16">
+  <h1 class="text-3xl font-semibold tracking-tight mb-4">About ClearPilot</h1>
+  <p class="text-gray-600 leading-relaxed mb-6">
+    ClearPilot is a two-part study companion for SAP CPI (Cloud Integration) job seekers, built by
+    someone going through that exact job search. The web app is where you study; the desktop app
+    is where you perform.
+  </p>
+
+  <h2 class="text-lg font-semibold mt-10 mb-3">The web app</h2>
+  <p class="text-gray-600 leading-relaxed mb-6">
+    Ask questions about adapters, mappings, security artifacts, and real integration scenarios.
+    Answers are grounded in official SAP Integration Suite documentation and SAP Learning courses,
+    plus whatever resume, job description, and notes you bring to your account.
+  </p>
+
+  <h2 class="text-lg font-semibold mt-10 mb-3">The desktop app</h2>
+  <p class="text-gray-600 leading-relaxed mb-6">
+    ClearPilot Desktop runs invisibly during a real interview — listening to the conversation,
+    matching questions against your prep, and surfacing an answer on your screen in milliseconds.
+    It stays out of the taskbar, Alt-Tab, and screen-share capture.
+  </p>
+
+  <h2 class="text-lg font-semibold mt-10 mb-3">One account</h2>
+  <p class="text-gray-600 leading-relaxed mb-6">
+    Sign in once. Materials, training data, and history you build on the web are available on
+    desktop, and the reverse — see <a href="/data" class="text-purple-600 hover:underline">Data &amp; Privacy</a>
+    for exactly what's shared and how.
+  </p>
+</main>
+
+<footer class="border-t border-gray-200 mt-12">
+  <div class="max-w-6xl mx-auto px-6 py-10 text-sm text-gray-500 flex items-center justify-between">
+    <span>&copy; 2026 ClearPilot</span>
+    <div class="flex items-center gap-6">
+      <a href="/about" class="hover:text-gray-900">About</a>
+      <a href="/data" class="hover:text-gray-900">Data &amp; Privacy</a>
+    </div>
+  </div>
+</footer>
+
+<script src="/assets/js/app.js"></script>
+</body>
+</html>

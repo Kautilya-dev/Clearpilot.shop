@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ClearPilot — Data &amp; Privacy</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<link rel="stylesheet" href="/assets/css/styles.css" />
+</head>
+<body class="bg-white text-gray-900 antialiased">
+
+<header class="border-b border-gray-200">
+  <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+    <a href="/" class="flex items-center gap-2 font-semibold text-lg">
+      <i data-lucide="compass" class="text-purple-600 w-6 h-6"></i>ClearPilot
+    </a>
+    <nav class="hidden md:flex items-center gap-8 text-sm font-medium text-gray-600">
+      <a href="/about" class="hover:text-gray-900">About</a>
+      <a href="/download" class="hover:text-gray-900">Download</a>
+      <a href="/data" class="text-gray-900">Data &amp; Privacy</a>
+    </nav>
+    <div id="nav-auth" class="flex items-center gap-3"></div>
+  </div>
+</header>
+
+<main class="max-w-3xl mx-auto px-6 py-16">
+  <h1 class="text-3xl font-semibold tracking-tight mb-4">Data &amp; Privacy</h1>
+  <p class="text-gray-600 leading-relaxed mb-10">
+    A plain explanation of what ClearPilot stores, where, and how it moves between the web app and
+    the desktop app.
+  </p>
+
+  <h2 class="text-lg font-semibold mb-3">What's stored</h2>
+  <ul class="space-y-2 text-gray-600 mb-10">
+    <li class="flex items-start gap-2.5"><i data-lucide="file-text" class="w-4 h-4 mt-0.5 text-purple-500 shrink-0"></i>Your account: email, display name, and a securely hashed password (never the password itself)</li>
+    <li class="flex items-start gap-2.5"><i data-lucide="folder" class="w-4 h-4 mt-0.5 text-purple-500 shrink-0"></i>Materials you upload: resumes, job descriptions, project notes, training Q&amp;A</li>
+    <li class="flex items-start gap-2.5"><i data-lucide="book-marked" class="w-4 h-4 mt-0.5 text-purple-500 shrink-0"></i>Your knowledge base entries and interview/study history</li>
+  </ul>
+
+  <h2 class="text-lg font-semibold mb-3">Where it lives</h2>
+  <p class="text-gray-600 leading-relaxed mb-10">
+    Everything above is stored in a Postgres database we run on Railway, reachable only over a
+    private network from the ClearPilot backend — never exposed directly to the internet, and
+    never bundled into the desktop app itself.
+  </p>
+
+  <h2 class="text-lg font-semibold mb-3">How web and desktop stay in sync</h2>
+  <p class="text-gray-600 leading-relaxed mb-10">
+    One account, one backend. The desktop app keeps a local copy of your materials and history so
+    it keeps working instantly and offline during an actual interview, and syncs with the same
+    account in the background — it never talks to the database directly.
+  </p>
+
+  <h2 class="text-lg font-semibold mb-3">Third parties</h2>
+  <p class="text-gray-600 leading-relaxed mb-10">
+    Questions you ask are sent to OpenAI's API to generate answers. Resume and job description
+    text you upload may be included in that request as context. No material is sold or shared for
+    advertising.
+  </p>
+</main>
+
+<footer class="border-t border-gray-200 mt-12">
+  <div class="max-w-6xl mx-auto px-6 py-10 text-sm text-gray-500 flex items-center justify-between">
+    <span>&copy; 2026 ClearPilot</span>
+    <div class="flex items-center gap-6">
+      <a href="/about" class="hover:text-gray-900">About</a>
+      <a href="/data" class="hover:text-gray-900">Data &amp; Privacy</a>
+    </div>
+  </div>
+</footer>
+
+<script src="/assets/js/app.js"></script>
+</body>
+</html>

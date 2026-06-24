@@ -1,16 +1,18 @@
+from pathlib import Path
+
 import asyncpg
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from config import settings
-from routers import auth
+from routers import auth, pages
+
+_STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(title="ClearPilot API")
 app.include_router(auth.router)
-
-
-@app.get("/")
-async def root():
-    return {"service": "clearpilot-web", "status": "ok"}
+app.include_router(pages.router)
+app.mount("/assets", StaticFiles(directory=_STATIC_DIR), name="assets")
 
 
 @app.get("/health")

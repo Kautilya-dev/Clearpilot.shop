@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ClearPilot — Log in</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<link rel="stylesheet" href="/assets/css/styles.css" />
+</head>
+<body class="bg-white text-gray-900 antialiased">
+
+<header class="border-b border-gray-200">
+  <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+    <a href="/" class="flex items-center gap-2 font-semibold text-lg">
+      <i data-lucide="compass" class="text-purple-600 w-6 h-6"></i>ClearPilot
+    </a>
+    <nav class="hidden md:flex items-center gap-8 text-sm font-medium text-gray-600">
+      <a href="/about" class="hover:text-gray-900">About</a>
+      <a href="/download" class="hover:text-gray-900">Download</a>
+      <a href="/data" class="hover:text-gray-900">Data &amp; Privacy</a>
+    </nav>
+    <div id="nav-auth" class="flex items-center gap-3"></div>
+  </div>
+</header>
+
+<main class="max-w-sm mx-auto px-6 py-20">
+  <h1 class="text-2xl font-semibold tracking-tight mb-1">Log in</h1>
+  <p class="text-sm text-gray-500 mb-6">Welcome back.</p>
+
+  <div id="form-error" class="alert-error mb-4 hidden"></div>
+
+  <form id="login-form" class="space-y-4">
+    <div>
+      <label class="text-sm font-medium text-gray-700 mb-1.5 block">Email</label>
+      <input type="email" name="email" required class="field-input" placeholder="you@example.com" />
+    </div>
+    <div>
+      <label class="text-sm font-medium text-gray-700 mb-1.5 block">Password</label>
+      <input type="password" name="password" required class="field-input" placeholder="••••••••" />
+    </div>
+    <button type="submit" class="btn-primary w-full justify-center">Log in</button>
+  </form>
+
+  <p class="text-sm text-gray-500 mt-6 text-center">
+    New here? <a href="/register" class="text-purple-600 hover:underline font-medium">Create an account</a>
+  </p>
+</main>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById('form-error');
+    errorBox.classList.add('hidden');
+
+    const form = new FormData(e.target);
+    const body = { email: form.get('email'), password: form.get('password') };
+
+    try {
+      const res = await fetch('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        errorBox.textContent = data.detail || 'Something went wrong.';
+        errorBox.classList.remove('hidden');
+        return;
+      }
+      setToken(data.access_token);
+      window.location.href = '/account';
+    } catch (err) {
+      errorBox.textContent = 'Could not reach the server. Try again.';
+      errorBox.classList.remove('hidden');
+    }
+  });
+</script>
+</body>
+</html>

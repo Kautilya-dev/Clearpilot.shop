@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ClearPilot — Account</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<link rel="stylesheet" href="/assets/css/styles.css" />
+</head>
+<body class="bg-white text-gray-900 antialiased">
+
+<header class="border-b border-gray-200">
+  <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+    <a href="/" class="flex items-center gap-2 font-semibold text-lg">
+      <i data-lucide="compass" class="text-purple-600 w-6 h-6"></i>ClearPilot
+    </a>
+    <nav class="hidden md:flex items-center gap-8 text-sm font-medium text-gray-600">
+      <a href="/about" class="hover:text-gray-900">About</a>
+      <a href="/download" class="hover:text-gray-900">Download</a>
+      <a href="/data" class="hover:text-gray-900">Data &amp; Privacy</a>
+    </nav>
+    <div id="nav-auth" class="flex items-center gap-3"></div>
+  </div>
+</header>
+
+<main id="account-content" class="max-w-2xl mx-auto px-6 py-16 hidden">
+  <h1 class="text-2xl font-semibold tracking-tight mb-6">Account</h1>
+
+  <div class="border border-gray-200 rounded-2xl p-6 flex items-center gap-4 mb-6">
+    <div id="avatar" class="w-12 h-12 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center font-semibold text-lg"></div>
+    <div>
+      <p id="display-name" class="font-medium"></p>
+      <p id="email" class="text-sm text-gray-500"></p>
+    </div>
+  </div>
+
+  <div class="border border-gray-200 rounded-2xl p-6">
+    <p class="text-sm text-gray-500 mb-4">
+      This is the same account ClearPilot Desktop will sign into once it's available — see
+      <a href="/download" class="text-purple-600 hover:underline">Download</a>.
+    </p>
+    <button onclick="logout()" class="btn-secondary"><i data-lucide="log-out" class="w-4 h-4"></i>Log out</button>
+  </div>
+</main>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  (async () => {
+    const user = await fetchCurrentUser();
+    if (!user) {
+      window.location.href = '/login';
+      return;
+    }
+    document.getElementById('display-name').textContent = user.display_name;
+    document.getElementById('email').textContent = user.email;
+    document.getElementById('avatar').textContent = user.display_name.slice(0, 1).toUpperCase();
+    document.getElementById('account-content').classList.remove('hidden');
+    if (window.lucide) lucide.createIcons();
+  })();
+</script>
+</body>
+</html>
