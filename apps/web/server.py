@@ -1,9 +1,11 @@
-import os
-
 import asyncpg
 from fastapi import FastAPI
 
+from config import settings
+from routers import auth
+
 app = FastAPI(title="ClearPilot API")
+app.include_router(auth.router)
 
 
 @app.get("/")
@@ -13,12 +15,11 @@ async def root():
 
 @app.get("/health")
 async def health():
-    database_url = os.environ.get("DATABASE_URL")
-    if not database_url:
+    if not settings.database_url:
         return {"status": "ok", "database": "not configured"}
 
     try:
-        conn = await asyncpg.connect(database_url)
+        conn = await asyncpg.connect(settings.database_url)
         await conn.execute("SELECT 1")
         await conn.close()
         return {"status": "ok", "database": "connected"}
