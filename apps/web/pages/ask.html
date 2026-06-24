@@ -6,24 +6,29 @@
 <title>ClearPilot — Ask</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/lucide@latest"></script>
-<link rel="stylesheet" href="/assets/css/styles.css" />
+<link rel="stylesheet" href="/assets/css/styles.css?v=2" />
 </head>
-<body class="bg-white text-gray-900 antialiased h-screen flex flex-col overflow-hidden">
+<body class="bg-white text-gray-900 antialiased h-screen overflow-hidden">
 
-<header class="border-b border-gray-200 shrink-0">
-  <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-    <a href="/" class="flex items-center gap-2 font-semibold text-lg">
-      <i data-lucide="compass" class="text-purple-600 w-6 h-6"></i>ClearPilot
-    </a>
-    <nav class="hidden md:flex items-center gap-8 text-sm font-medium text-gray-600">
-      <a href="/ask" class="text-gray-900">Ask</a>
-      <a href="/about" class="hover:text-gray-900">About</a>
-      <a href="/download" class="hover:text-gray-900">Download</a>
-      <a href="/data" class="hover:text-gray-900">Data &amp; Privacy</a>
+<div class="h-screen flex overflow-hidden">
+  <aside class="w-56 shrink-0 border-r border-gray-200 flex flex-col bg-white">
+    <div class="h-16 flex items-center px-5 border-b border-gray-200">
+      <a href="/dashboard" class="flex items-center gap-2 font-semibold">
+        <i data-lucide="compass" class="text-purple-600 w-5 h-5"></i>ClearPilot
+      </a>
+    </div>
+    <nav class="flex-1 px-3 py-4 space-y-1">
+      <a href="/dashboard" class="sidebar-link"><i data-lucide="layout-dashboard" class="w-4 h-4"></i>Dashboard</a>
+      <a href="/ask" class="sidebar-link active"><i data-lucide="message-circle" class="w-4 h-4"></i>Ask</a>
+      <a href="/materials" class="sidebar-link"><i data-lucide="folder" class="w-4 h-4"></i>Materials</a>
+      <a href="/knowledge" class="sidebar-link"><i data-lucide="book-marked" class="w-4 h-4"></i>Knowledge base</a>
+      <a href="/history" class="sidebar-link"><i data-lucide="history" class="w-4 h-4"></i>History</a>
     </nav>
-    <div id="nav-auth" class="flex items-center gap-3"></div>
-  </div>
-</header>
+    <div class="px-3 py-3 border-t border-gray-200 space-y-1">
+      <a href="/settings" class="sidebar-link"><i data-lucide="settings" class="w-4 h-4"></i>Settings</a>
+      <div id="sidebar-user"></div>
+    </div>
+  </aside>
 
 <main class="flex-1 overflow-hidden flex flex-col max-w-3xl w-full mx-auto px-6">
   <div id="conversation" class="flex-1 overflow-y-auto py-6 space-y-5">
@@ -56,12 +61,11 @@
     <p class="text-xs text-gray-400 mt-2">Click the mic once to talk hands-free — click again to stop. Works best in Chrome.</p>
   </div>
 </main>
+</div>
 
-<script src="/assets/js/app.js"></script>
+<script src="/assets/js/app.js?v=2"></script>
 <script>
-  if (!getToken()) {
-    window.location.href = '/login';
-  }
+  if (!requireAuthOrRedirect()) { /* redirected */ }
 
   let recognition = null;
   let isListening = false;
@@ -104,7 +108,7 @@
     sendBtn.disabled = true;
 
     try {
-      const res = await fetch('/chat/ask', {
+      const res = await fetch('/api/chat/ask', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ question }),

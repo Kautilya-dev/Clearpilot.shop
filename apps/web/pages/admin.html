@@ -6,7 +6,7 @@
 <title>ClearPilot — Admin</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/lucide@latest"></script>
-<link rel="stylesheet" href="/assets/css/styles.css" />
+<link rel="stylesheet" href="/assets/css/styles.css?v=2" />
 </head>
 <body class="bg-white text-gray-900 antialiased">
 
@@ -52,7 +52,7 @@
   </div>
 </main>
 
-<script src="/assets/js/app.js"></script>
+<script src="/assets/js/app.js?v=2"></script>
 <script>
   (async () => {
     const token = getToken();
@@ -66,7 +66,7 @@
     const content = document.getElementById('admin-content');
 
     try {
-      const res = await fetch('/admin/users', { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch('/api/admin/users', { headers: { Authorization: `Bearer ${token}` } });
       if (res.status === 403) {
         loading.classList.add('hidden');
         denied.classList.remove('hidden');

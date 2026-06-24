@@ -10,12 +10,14 @@ from routers import admin, auth, chat, history, knowledge, materials, pages
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(title="ClearPilot API")
-app.include_router(auth.router)
-app.include_router(admin.router)
-app.include_router(materials.router)
-app.include_router(knowledge.router)
-app.include_router(history.router)
-app.include_router(chat.router)
+# All data/API routers live under /api so they can never collide with a page route -
+# e.g. GET /materials (page) vs GET /materials (API list) would otherwise be ambiguous.
+app.include_router(auth.router, prefix="/api")
+app.include_router(admin.router, prefix="/api")
+app.include_router(materials.router, prefix="/api")
+app.include_router(knowledge.router, prefix="/api")
+app.include_router(history.router, prefix="/api")
+app.include_router(chat.router, prefix="/api")
 app.include_router(pages.router)
 app.mount("/assets", StaticFiles(directory=_STATIC_DIR), name="assets")
 

@@ -6,7 +6,7 @@
 <title>ClearPilot — Create your account</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/lucide@latest"></script>
-<link rel="stylesheet" href="/assets/css/styles.css" />
+<link rel="stylesheet" href="/assets/css/styles.css?v=2" />
 </head>
 <body class="bg-white text-gray-900 antialiased">
 
@@ -52,7 +52,7 @@
   </p>
 </main>
 
-<script src="/assets/js/app.js"></script>
+<script src="/assets/js/app.js?v=2"></script>
 <script>
   document.getElementById('register-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -67,7 +67,7 @@
     };
 
     try {
-      const res = await fetch('/auth/register', {
+      const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -79,7 +79,7 @@
         return;
       }
       setToken(data.access_token);
-      window.location.href = '/ask';
+      window.location.href = '/dashboard';
     } catch (err) {
       errorBox.textContent = 'Could not reach the server. Try again.';
       errorBox.classList.remove('hidden');

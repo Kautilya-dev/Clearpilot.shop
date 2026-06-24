@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ClearPilot — Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<link rel="stylesheet" href="/assets/css/styles.css?v=2" />
+</head>
+<body class="bg-white text-gray-900 antialiased h-screen overflow-hidden">
+
+<div class="h-screen flex overflow-hidden">
+  <aside class="w-56 shrink-0 border-r border-gray-200 flex flex-col bg-white">
+    <div class="h-16 flex items-center px-5 border-b border-gray-200">
+      <a href="/dashboard" class="flex items-center gap-2 font-semibold">
+        <i data-lucide="compass" class="text-purple-600 w-5 h-5"></i>ClearPilot
+      </a>
+    </div>
+    <nav class="flex-1 px-3 py-4 space-y-1">
+      <a href="/dashboard" class="sidebar-link active"><i data-lucide="layout-dashboard" class="w-4 h-4"></i>Dashboard</a>
+      <a href="/ask" class="sidebar-link"><i data-lucide="message-circle" class="w-4 h-4"></i>Ask</a>
+      <a href="/materials" class="sidebar-link"><i data-lucide="folder" class="w-4 h-4"></i>Materials</a>
+      <a href="/knowledge" class="sidebar-link"><i data-lucide="book-marked" class="w-4 h-4"></i>Knowledge base</a>
+      <a href="/history" class="sidebar-link"><i data-lucide="history" class="w-4 h-4"></i>History</a>
+    </nav>
+    <div class="px-3 py-3 border-t border-gray-200 space-y-1">
+      <a href="/settings" class="sidebar-link"><i data-lucide="settings" class="w-4 h-4"></i>Settings</a>
+      <div id="sidebar-user"></div>
+    </div>
+  </aside>
+
+  <main class="flex-1 overflow-y-auto">
+    <div class="max-w-4xl mx-auto px-8 py-10">
+      <h1 id="greeting" class="text-2xl font-semibold tracking-tight mb-1">Welcome back</h1>
+      <p class="text-sm text-gray-500 mb-8">Here's where your prep stands.</p>
+
+      <div class="grid grid-cols-3 gap-4 mb-8">
+        <div class="border border-gray-200 rounded-2xl p-5">
+          <p class="text-xs text-gray-500 mb-1">Materials</p>
+          <p id="stat-materials" class="text-2xl font-semibold">—</p>
+        </div>
+        <div class="border border-gray-200 rounded-2xl p-5">
+          <p class="text-xs text-gray-500 mb-1">Knowledge base entries</p>
+          <p id="stat-kb" class="text-2xl font-semibold">—</p>
+        </div>
+        <div class="border border-gray-200 rounded-2xl p-5">
+          <p class="text-xs text-gray-500 mb-1">Questions asked</p>
+          <p id="stat-history" class="text-2xl font-semibold">—</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-3 gap-4 mb-8">
+        <a href="/ask" class="border border-gray-200 rounded-2xl p-4 hover:border-purple-300 transition">
+          <i data-lucide="message-circle" class="w-5 h-5 text-purple-600 mb-2"></i>
+          <p class="text-sm font-medium">Ask a question</p>
+        </a>
+        <a href="/materials" class="border border-gray-200 rounded-2xl p-4 hover:border-purple-300 transition">
+          <i data-lucide="upload" class="w-5 h-5 text-purple-600 mb-2"></i>
+          <p class="text-sm font-medium">Add a material</p>
+        </a>
+        <a href="/knowledge" class="border border-gray-200 rounded-2xl p-4 hover:border-purple-300 transition">
+          <i data-lucide="book-marked" class="w-5 h-5 text-purple-600 mb-2"></i>
+          <p class="text-sm font-medium">Curate knowledge base</p>
+        </a>
+      </div>
+
+      <div class="border border-gray-200 rounded-2xl p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="font-medium text-sm">Recent activity</h2>
+          <a href="/history" class="text-xs text-purple-600 hover:underline">View all</a>
+        </div>
+        <div id="recent-activity" class="space-y-3 text-sm text-gray-500">Loading...</div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="/assets/js/app.js?v=2"></script>
+<script>
+  if (!requireAuthOrRedirect()) { /* redirected */ }
+
+  (async () => {
+    const token = getToken();
+    if (!token) return;
+
+    const user = await fetchCurrentUser();
+    if (user) document.getElementById('greeting').textContent = `Welcome back, ${user.display_name}`;
+
+    const headers = { Authorization: `Bearer ${token}` };
+    const [materialsRes, kbRes, historyRes] = await Promise.all([
+      fetch('/api/materials', { headers }),
+      fetch('/api/knowledge', { headers }),
+      fetch('/api/history?limit=5', { headers }),
+    ]);
+
+    const materials = materialsRes.ok ? await materialsRes.json() : [];
+    const kb = kbRes.ok ? await kbRes.json() : [];
+    const history = historyRes.ok ? await historyRes.json() : [];
+
+    document.getElementById('stat-materials').textContent = materials.length;
+    document.getElementById('stat-kb').textContent = kb.length;
+    document.getElementById('stat-history').textContent = history.length;
+
+    const activityEl = document.getElementById('recent-activity');
+    if (history.length === 0) {
+      activityEl.textContent = 'Nothing yet — ask your first question to get started.';
+    } else {
+      activityEl.innerHTML = history.map(h => `
+        <div class="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0">
+          <span class="truncate text-gray-700">${h.question}</span>
+          <span class="text-xs text-gray-400 shrink-0 ml-3">${new Date(h.created_at).toLocaleDateString()}</span>
+        </div>
+      `).join('');
+    }
+    if (window.lucide) lucide.createIcons();
+  })();
+</script>
+</body>
+</html>

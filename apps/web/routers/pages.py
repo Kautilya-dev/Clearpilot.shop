@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from fastapi import APIRouter
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 
 router = APIRouter()
 
@@ -15,8 +15,12 @@ _ROUTES = {
     "/data": "data.html",
     "/login": "login.html",
     "/register": "register.html",
-    "/account": "account.html",
     "/admin": "admin.html",
+    "/dashboard": "dashboard.html",
+    "/materials": "materials.html",
+    "/knowledge": "knowledge.html",
+    "/history": "history.html",
+    "/settings": "settings.html",
 }
 
 for path, filename in _ROUTES.items():
@@ -28,3 +32,10 @@ for path, filename in _ROUTES.items():
         return _handler
 
     router.add_api_route(path, _make_handler(file_path), methods=["GET"], include_in_schema=False)
+
+
+@router.get("/account", include_in_schema=False)
+async def account_redirect():
+    # /account's old profile view is now the Profile section of /settings - redirect
+    # rather than maintain two overlapping pages.
+    return RedirectResponse(url="/settings")

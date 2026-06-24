@@ -32,3 +32,13 @@
   background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0;
   padding: 0.625rem 0.875rem; border-radius: 0.5rem; font-size: 0.875rem;
 }
+
+/* App shell (authenticated area) sidebar */
+.sidebar-link {
+  display: flex; align-items: center; gap: 0.625rem;
+  padding: 0.5rem 0.75rem; border-radius: 0.5rem;
+  font-size: 0.875rem; font-weight: 500; color: #6b7280; text-decoration: none;
+  transition: background .15s, color .15s;
+}
+.sidebar-link:hover { background: #f9fafb; color: #111827; }
+.sidebar-link.active { background: #f5f3ff; color: #6d28d9; }
