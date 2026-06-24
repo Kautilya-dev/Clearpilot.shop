@@ -7,3 +7,4 @@ bcrypt==5.0.0
 pyjwt==2.10.1
 pydantic-settings==2.7.0
 email-validator==2.2.0
+beautifulsoup4==4.12.3
