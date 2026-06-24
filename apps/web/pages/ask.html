@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ClearPilot — Ask</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<link rel="stylesheet" href="/assets/css/styles.css" />
+</head>
+<body class="bg-white text-gray-900 antialiased h-screen flex flex-col overflow-hidden">
+
+<header class="border-b border-gray-200 shrink-0">
+  <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+    <a href="/" class="flex items-center gap-2 font-semibold text-lg">
+      <i data-lucide="compass" class="text-purple-600 w-6 h-6"></i>ClearPilot
+    </a>
+    <nav class="hidden md:flex items-center gap-8 text-sm font-medium text-gray-600">
+      <a href="/ask" class="text-gray-900">Ask</a>
+      <a href="/about" class="hover:text-gray-900">About</a>
+      <a href="/download" class="hover:text-gray-900">Download</a>
+      <a href="/data" class="hover:text-gray-900">Data &amp; Privacy</a>
+    </nav>
+    <div id="nav-auth" class="flex items-center gap-3"></div>
+  </div>
+</header>
+
+<main class="flex-1 overflow-hidden flex flex-col max-w-3xl w-full mx-auto px-6">
+  <div id="conversation" class="flex-1 overflow-y-auto py-6 space-y-5">
+    <div id="empty-state" class="text-center py-16">
+      <div class="w-12 h-12 rounded-2xl bg-purple-50 flex items-center justify-center mx-auto mb-4">
+        <i data-lucide="message-circle" class="w-6 h-6 text-purple-600"></i>
+      </div>
+      <p class="font-medium mb-1">Ask anything about SAP CPI</p>
+      <p class="text-sm text-gray-500">Grounded in official documentation and your own resume/JD — type or use the mic.</p>
+    </div>
+  </div>
+
+  <div class="border-t border-gray-200 py-4 shrink-0">
+    <div id="form-error" class="alert-error mb-3 hidden"></div>
+    <form id="ask-form" class="flex items-end gap-2">
+      <textarea
+        id="question-input"
+        rows="1"
+        class="field-input flex-1 resize-none"
+        placeholder="Ask an interview question..."
+        style="max-height: 120px;"
+      ></textarea>
+      <button type="button" id="mic-btn" class="btn-secondary shrink-0" title="Ask by voice">
+        <i data-lucide="mic" class="w-4 h-4"></i>
+      </button>
+      <button type="submit" id="send-btn" class="btn-primary shrink-0">
+        <i data-lucide="send" class="w-4 h-4"></i>
+      </button>
+    </form>
+    <p class="text-xs text-gray-400 mt-2">Click the mic once to talk hands-free — click again to stop. Works best in Chrome.</p>
+  </div>
+</main>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  if (!getToken()) {
+    window.location.href = '/login';
+  }
+
+  let recognition = null;
+  let isListening = false;
+
+  function appendMessage(role, text) {
+    document.getElementById('empty-state')?.remove();
+    const wrap = document.createElement('div');
+    if (role === 'question') {
+      wrap.className = 'flex justify-end';
+      wrap.innerHTML = `<div class="bg-purple-600 text-white rounded-2xl rounded-br-md px-4 py-2.5 max-w-[80%] text-sm">${text}</div>`;
+    } else {
+      wrap.className = 'flex justify-start';
+      wrap.innerHTML = `<div class="bg-gray-50 border border-gray-100 rounded-2xl rounded-bl-md px-4 py-3 max-w-[85%] text-sm whitespace-pre-wrap">${text}</div>`;
+    }
+    document.getElementById('conversation').appendChild(wrap);
+    document.getElementById('conversation').scrollTop = document.getElementById('conversation').scrollHeight;
+    return wrap;
+  }
+
+  function appendSources(sources) {
+    if (!sources || sources.length === 0) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'flex justify-start';
+    const chips = sources.slice(0, 3).map(s => `<span class="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-full">${s.title}</span>`).join(' ');
+    wrap.innerHTML = `<div class="flex flex-wrap gap-1.5 max-w-[85%] pl-1">${chips}</div>`;
+    document.getElementById('conversation').appendChild(wrap);
+    document.getElementById('conversation').scrollTop = document.getElementById('conversation').scrollHeight;
+  }
+
+  async function submitQuestion(question) {
+    if (!question.trim()) return;
+    const token = getToken();
+    if (!token) { window.location.href = '/login'; return; }
+
+    const errorBox = document.getElementById('form-error');
+    errorBox.classList.add('hidden');
+    appendMessage('question', question);
+
+    const sendBtn = document.getElementById('send-btn');
+    sendBtn.disabled = true;
+
+    try {
+      const res = await fetch('/chat/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ question }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        errorBox.textContent = data.detail || 'Something went wrong.';
+        errorBox.classList.remove('hidden');
+        return;
+      }
+      appendMessage('answer', data.answer);
+      appendSources(data.sources);
+    } catch (err) {
+      errorBox.textContent = 'Could not reach the server. Try again.';
+      errorBox.classList.remove('hidden');
+    } finally {
+      sendBtn.disabled = false;
+    }
+  }
+
+  document.getElementById('ask-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const input = document.getElementById('question-input');
+    const question = input.value.trim();
+    input.value = '';
+    submitQuestion(question);
+  });
+
+  function updateMicUI() {
+    const btn = document.getElementById('mic-btn');
+    btn.classList.toggle('bg-red-50', isListening);
+    btn.classList.toggle('border-red-200', isListening);
+    btn.innerHTML = isListening
+      ? '<i data-lucide="mic-off" class="w-4 h-4 text-red-600"></i>'
+      : '<i data-lucide="mic" class="w-4 h-4"></i>';
+    if (window.lucide) lucide.createIcons();
+  }
+
+  document.getElementById('mic-btn').addEventListener('click', () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Speech recognition is not supported in this browser. Try Chrome.');
+      return;
+    }
+
+    if (isListening) {
+      isListening = false;
+      recognition?.stop();
+      updateMicUI();
+      return;
+    }
+
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onresult = (event) => {
+      let finalText = '';
+      let interimText = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) finalText += event.results[i][0].transcript;
+        else interimText += event.results[i][0].transcript;
+      }
+      if (finalText.trim()) {
+        submitQuestion(finalText.trim());
+      } else {
+        document.getElementById('question-input').value = interimText;
+      }
+    };
+
+    recognition.onerror = () => { isListening = false; updateMicUI(); };
+    recognition.onend = () => { if (isListening) recognition.start(); };
+
+    recognition.start();
+    isListening = true;
+    updateMicUI();
+  });
+</script>
+</body>
+</html>

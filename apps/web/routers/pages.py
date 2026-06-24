@@ -9,6 +9,7 @@ _PAGES_DIR = Path(__file__).resolve().parent.parent / "pages"
 
 _ROUTES = {
     "/": "index.html",
+    "/ask": "ask.html",
     "/about": "about.html",
     "/download": "download.html",
     "/data": "data.html",
