@@ -1,0 +1,6 @@
+{
+  "name": "@clearpilot/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "ClearPilot desktop app (Electron) - scaffolded, not yet built"
+}

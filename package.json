@@ -1,0 +1,9 @@
+{
+  "name": "clearpilot-monorepo",
+  "private": true,
+  "description": "ClearPilot - SAP CPI interview prep, web + desktop",
+  "workspaces": [
+    "apps/desktop",
+    "packages/shared"
+  ]
+}

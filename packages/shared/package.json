@@ -1,0 +1,6 @@
+{
+  "name": "@clearpilot/shared",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared types/schemas used by apps/desktop and apps/web"
+}
