@@ -400,8 +400,8 @@
     } else {
       wrap.className = 'flex justify-start flex-col items-start gap-1';
       wrap.innerHTML = `
-        ${badge ? `<span class="text-xs text-purple-600 pl-1">${badge}</span>` : ''}
-        <div class="bg-gray-50 border border-gray-100 rounded-2xl rounded-bl-md px-4 py-3 max-w-[85%] text-sm whitespace-pre-wrap">${text}</div>
+        <span class="text-xs text-purple-600 pl-1 qa-badge ${badge ? '' : 'hidden'}">${badge || ''}</span>
+        <div class="bg-gray-50 border border-gray-100 rounded-2xl rounded-bl-md px-4 py-3 max-w-[85%] text-sm whitespace-pre-wrap answer-text">${text}</div>
       `;
     }
     document.getElementById('conversation').appendChild(wrap);
@@ -414,6 +414,16 @@
     wrap.className = 'flex justify-start';
     const chips = sources.slice(0, 3).map(s => `<span class="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-full">${s.title}</span>`).join(' ');
     wrap.innerHTML = `<div class="flex flex-wrap gap-1.5 max-w-[85%] pl-1">${chips}</div>`;
+    document.getElementById('conversation').appendChild(wrap);
+  }
+
+  function appendTiming(event) {
+    const wrap = document.createElement('div');
+    wrap.className = 'flex justify-start';
+    const startedClock = new Date(event.started_at).toLocaleTimeString();
+    const firstChunk = event.time_to_first_chunk_ms != null ? `first word in ${event.time_to_first_chunk_ms}ms · ` : '';
+    const total = `done in ${(event.duration_ms / 1000).toFixed(2)}s`;
+    wrap.innerHTML = `<div class="text-xs text-gray-400 pl-1">${startedClock} · ${firstChunk}${total}</div>`;
     document.getElementById('conversation').appendChild(wrap);
   }
 
@@ -445,20 +455,58 @@
     const sendBtn = document.getElementById('send-btn');
     sendBtn.disabled = true;
 
+    let answerWrap = null;
+    let answerEl = null;
+    let badgeEl = null;
+
     try {
       const res = await fetch(`/api/interviews/${interviewId}/chat/ask`, {
         method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ question }),
       });
-      const data = await res.json();
       if (!res.ok) {
+        const data = await res.json();
         errorBox.textContent = data.detail || 'Something went wrong.';
         errorBox.classList.remove('hidden');
         return;
       }
-      appendMessage('answer', data.answer, data.from_qa_bank ? 'From your Q&A' : null);
-      appendSources(data.sources);
-      scrollConversationToBottom();
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        let sepIndex;
+        while ((sepIndex = buffer.indexOf('\n\n')) !== -1) {
+          const rawEvent = buffer.slice(0, sepIndex);
+          buffer = buffer.slice(sepIndex + 2);
+          if (!rawEvent.startsWith('data: ')) continue;
+          const event = JSON.parse(rawEvent.slice(6));
+
+          if (event.type === 'start') {
+            answerWrap = appendMessage('answer', '', event.from_qa_bank ? 'From your Q&A' : null);
+            answerEl = answerWrap.querySelector('.answer-text');
+            badgeEl = answerWrap.querySelector('.qa-badge');
+            scrollConversationToBottom();
+          } else if (event.type === 'chunk') {
+            if (answerEl) {
+              answerEl.textContent += event.text;
+              scrollConversationToBottom();
+            }
+          } else if (event.type === 'error') {
+            errorBox.textContent = event.detail || 'Something went wrong.';
+            errorBox.classList.remove('hidden');
+          } else if (event.type === 'done') {
+            appendSources(event.sources);
+            appendTiming(event);
+            scrollConversationToBottom();
+          }
+        }
+      }
     } catch (err) {
       errorBox.textContent = 'Could not reach the server. Try again.';
       errorBox.classList.remove('hidden');

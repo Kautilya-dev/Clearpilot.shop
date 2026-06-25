@@ -1,3 +1,5 @@
+import json
+from collections.abc import AsyncIterator
 from uuid import UUID
 
 import httpx
@@ -74,9 +76,12 @@ def build_system_prompt(
     )
 
 
-async def generate_answer(system_prompt: str, question: str) -> str:
+async def generate_answer_stream(system_prompt: str, question: str) -> AsyncIterator[str]:
+    """Yields text deltas as OpenAI generates them (Chat Completions SSE stream),
+    so the caller can forward each piece to the client as it arrives."""
     async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.post(
+        async with client.stream(
+            "POST",
             "https://api.openai.com/v1/chat/completions",
             headers={"Authorization": f"Bearer {settings.openai_api_key}", "Content-Type": "application/json"},
             json={
@@ -85,8 +90,16 @@ async def generate_answer(system_prompt: str, question: str) -> str:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": question},
                 ],
+                "stream": True,
             },
-        )
-        response.raise_for_status()
-        data = response.json()
-        return data["choices"][0]["message"]["content"]
+        ) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                payload = line[len("data: "):]
+                if payload == "[DONE]":
+                    break
+                delta = json.loads(payload)["choices"][0]["delta"].get("content")
+                if delta:
+                    yield delta
