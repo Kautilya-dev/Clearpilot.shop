@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ClearPilot — Interview</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<link rel="stylesheet" href="/assets/css/styles.css?v=2" />
+</head>
+<body class="bg-white text-gray-900 antialiased h-screen overflow-hidden">
+
+<div class="h-screen flex overflow-hidden">
+  <aside class="w-56 shrink-0 border-r border-gray-200 flex flex-col bg-white">
+    <div class="h-16 flex items-center px-5 border-b border-gray-200">
+      <a href="/dashboard" class="flex items-center gap-2 font-semibold">
+        <i data-lucide="compass" class="text-purple-600 w-5 h-5"></i>ClearPilot
+      </a>
+    </div>
+    <nav class="flex-1 px-3 py-4 space-y-1">
+      <a href="/dashboard" class="sidebar-link"><i data-lucide="layout-dashboard" class="w-4 h-4"></i>Dashboard</a>
+      <a href="/history" class="sidebar-link"><i data-lucide="history" class="w-4 h-4"></i>History</a>
+    </nav>
+    <div class="px-3 py-3 border-t border-gray-200 space-y-1">
+      <a href="/settings" class="sidebar-link"><i data-lucide="settings" class="w-4 h-4"></i>Settings</a>
+      <div id="sidebar-user"></div>
+    </div>
+  </aside>
+
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div class="border-b border-gray-200 px-8 py-4 shrink-0">
+      <a href="/dashboard" class="text-xs text-gray-400 hover:text-gray-600 inline-flex items-center gap-1 mb-2">
+        <i data-lucide="arrow-left" class="w-3 h-3"></i>All interviews
+      </a>
+      <div class="flex items-center justify-between gap-4">
+        <input id="interview-title" class="text-xl font-semibold tracking-tight border-none p-0 focus:ring-0 flex-1 min-w-0" />
+        <select id="interview-state" class="field-input text-sm w-auto shrink-0">
+          <option value="active">Active</option>
+          <option value="completed">Completed</option>
+          <option value="archived">Archived</option>
+        </select>
+      </div>
+      <div id="interview-subjects" class="flex items-center gap-1.5 flex-wrap mt-2"></div>
+    </div>
+
+    <div class="border-b border-gray-200 px-8 flex gap-6 shrink-0">
+      <button data-tab="materials" class="tab-btn text-sm font-medium py-3 border-b-2 -mb-px">Materials</button>
+      <button data-tab="qa" class="tab-btn text-sm font-medium py-3 border-b-2 -mb-px">Q&amp;A</button>
+      <button data-tab="copilot" class="tab-btn text-sm font-medium py-3 border-b-2 -mb-px">Copilot</button>
+    </div>
+
+    <div class="flex-1 overflow-hidden">
+      <!-- Materials -->
+      <div id="panel-materials" class="h-full overflow-y-auto px-8 py-6">
+        <div id="material-form" class="border border-gray-200 rounded-2xl p-5 mb-6 hidden">
+          <div id="material-error" class="alert-error mb-3 hidden"></div>
+          <p id="material-form-title" class="text-sm font-medium mb-3"></p>
+          <label class="text-xs font-medium text-gray-700 mb-1.5 block">Name</label>
+          <input id="material-name" type="text" class="field-input mb-3" placeholder="e.g. My resume" />
+          <label class="text-xs font-medium text-gray-700 mb-1.5 block">Content</label>
+          <textarea id="material-text" rows="6" class="field-input mb-3" placeholder="Paste the text content..."></textarea>
+          <div class="flex gap-2">
+            <button id="material-save" class="btn-primary text-sm">Save</button>
+            <button id="material-cancel" class="btn-secondary text-sm">Cancel</button>
+          </div>
+        </div>
+        <input type="file" id="material-file-input" class="hidden" accept=".pdf,.docx,.txt,.md" />
+        <div id="materials-sections" class="space-y-8"></div>
+      </div>
+
+      <!-- Q&A -->
+      <div id="panel-qa" class="h-full overflow-y-auto px-8 py-6 hidden">
+        <div class="flex items-center justify-between mb-1">
+          <p class="text-sm text-gray-500">Category and tags are generated automatically by AI — just save the question and answer.</p>
+          <div class="flex gap-2 shrink-0 ml-4">
+            <button id="qa-upload-btn" class="btn-secondary text-sm"><i data-lucide="upload" class="w-4 h-4"></i>Upload file</button>
+            <button id="qa-add-btn" class="btn-primary text-sm"><i data-lucide="plus" class="w-4 h-4"></i>Add Q&amp;A</button>
+          </div>
+        </div>
+        <input type="file" id="qa-file-input" class="hidden" accept=".pdf,.docx,.txt,.md" />
+
+        <div id="qa-form" class="border border-gray-200 rounded-2xl p-5 my-4 hidden">
+          <div id="qa-error" class="alert-error mb-3 hidden"></div>
+          <label class="text-xs font-medium text-gray-700 mb-1.5 block">Question</label>
+          <input id="qa-question" type="text" class="field-input mb-3" placeholder="e.g. What is a Content Modifier used for?" />
+          <label class="text-xs font-medium text-gray-700 mb-1.5 block">Answer</label>
+          <textarea id="qa-answer" rows="4" class="field-input mb-3" placeholder="Your answer..."></textarea>
+          <div class="flex gap-2">
+            <button id="qa-save" class="btn-primary text-sm">Save</button>
+            <button id="qa-cancel" class="btn-secondary text-sm">Cancel</button>
+          </div>
+        </div>
+
+        <input id="qa-search" type="text" class="field-input my-4" placeholder="Search this interview's Q&amp;A..." />
+        <div id="qa-list" class="space-y-3">Loading...</div>
+      </div>
+
+      <!-- Copilot -->
+      <div id="panel-copilot" class="h-full overflow-hidden flex flex-col hidden">
+        <div id="conversation" class="flex-1 overflow-y-auto px-8 py-6 space-y-5">
+          <div id="empty-state" class="text-center py-16">
+            <div class="w-12 h-12 rounded-2xl bg-purple-50 flex items-center justify-center mx-auto mb-4">
+              <i data-lucide="message-circle" class="w-6 h-6 text-purple-600"></i>
+            </div>
+            <p class="font-medium mb-1">Ask anything grounded in this interview</p>
+            <p class="text-sm text-gray-500">Your materials, Q&amp;A, and selected subjects ground every answer — type or use the mic.</p>
+          </div>
+        </div>
+        <div class="border-t border-gray-200 px-8 py-4 shrink-0">
+          <div id="form-error" class="alert-error mb-3 hidden"></div>
+          <form id="ask-form" class="flex items-end gap-2">
+            <textarea id="question-input" rows="1" class="field-input flex-1 resize-none" placeholder="Ask an interview question..." style="max-height: 120px;"></textarea>
+            <button type="button" id="mic-btn" class="btn-secondary shrink-0" title="Ask by voice">
+              <i data-lucide="mic" class="w-4 h-4"></i>
+            </button>
+            <button type="submit" id="send-btn" class="btn-primary shrink-0">
+              <i data-lucide="send" class="w-4 h-4"></i>
+            </button>
+          </form>
+          <p class="text-xs text-gray-400 mt-2">Click the mic once to talk hands-free — click again to stop. Works best in Chrome.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/js/app.js?v=2"></script>
+<script>
+  if (!requireAuthOrRedirect()) { /* redirected */ }
+
+  const interviewId = window.location.pathname.split('/').filter(Boolean).pop();
+  const MATERIAL_SECTIONS = [
+    { type: 'resume', label: 'Resume' },
+    { type: 'job_description', label: 'Job description' },
+    { type: 'real_time_scenario', label: 'Real-time scenarios' },
+  ];
+
+  function authHeaders(extra) {
+    return Object.assign({ Authorization: `Bearer ${getToken()}` }, extra || {});
+  }
+
+  // ---------- Tabs ----------
+  function switchTab(tab) {
+    ['materials', 'qa', 'copilot'].forEach(t => {
+      document.getElementById(`panel-${t}`).classList.toggle('hidden', t !== tab);
+      const btn = document.querySelector(`.tab-btn[data-tab="${t}"]`);
+      btn.classList.toggle('border-purple-600', t === tab);
+      btn.classList.toggle('text-purple-700', t === tab);
+      btn.classList.toggle('border-transparent', t !== tab);
+      btn.classList.toggle('text-gray-500', t !== tab);
+    });
+    if (window.lucide) lucide.createIcons();
+  }
+  document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+  switchTab('materials');
+
+  // ---------- Header: title / state / subjects ----------
+  async function loadInterviewHeader() {
+    const res = await fetch(`/api/interviews/${interviewId}`, { headers: authHeaders() });
+    if (!res.ok) { window.location.href = '/dashboard'; return; }
+    const interview = await res.json();
+
+    document.title = `ClearPilot — ${interview.title}`;
+    document.getElementById('interview-title').value = interview.title;
+    document.getElementById('interview-state').value = interview.state;
+    document.getElementById('interview-subjects').innerHTML = interview.subjects.map(s =>
+      `<span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">${s.name}</span>`
+    ).join('');
+  }
+
+  let titleSaveTimeout;
+  document.getElementById('interview-title').addEventListener('input', (e) => {
+    clearTimeout(titleSaveTimeout);
+    const title = e.target.value.trim();
+    titleSaveTimeout = setTimeout(() => {
+      if (title) fetch(`/api/interviews/${interviewId}`, { method: 'PATCH', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ title }) });
+    }, 500);
+  });
+  document.getElementById('interview-state').addEventListener('change', (e) => {
+    fetch(`/api/interviews/${interviewId}`, { method: 'PATCH', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ state: e.target.value }) });
+  });
+
+  // ---------- Materials ----------
+  let pendingMaterialType = null;
+
+  async function loadMaterials() {
+    const res = await fetch(`/api/interviews/${interviewId}/materials`, { headers: authHeaders() });
+    const materials = res.ok ? await res.json() : [];
+
+    document.getElementById('materials-sections').innerHTML = MATERIAL_SECTIONS.map(section => {
+      const items = materials.filter(m => m.type === section.type);
+      return `
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">${section.label}</p>
+            <div class="flex gap-2">
+              <button onclick="openUploadFor('${section.type}')" class="text-xs text-purple-600 hover:underline">Upload file</button>
+              <button onclick="openMaterialForm('${section.type}', '${section.label}')" class="text-xs text-purple-600 hover:underline">Add text</button>
+            </div>
+          </div>
+          ${items.length === 0 ? `<p class="text-sm text-gray-400">Nothing here yet.</p>` : `
+            <div class="space-y-2">
+              ${items.map(m => `
+                <div class="border border-gray-200 rounded-xl p-4 flex items-start justify-between gap-4">
+                  <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium truncate">${m.name}</p>
+                    <p class="text-xs text-gray-500 truncate mt-0.5">${m.text.slice(0, 120)}${m.text.length > 120 ? '...' : ''}</p>
+                  </div>
+                  <div class="flex items-center gap-3 shrink-0">
+                    <label class="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+                      <input type="checkbox" ${m.active ? 'checked' : ''} onchange="toggleMaterialActive('${m.id}', this.checked)" />
+                      Active
+                    </label>
+                    <button onclick="deleteMaterial('${m.id}')" class="text-gray-400 hover:text-red-600">
+                      <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+      `;
+    }).join('');
+    if (window.lucide) lucide.createIcons();
+  }
+
+  function openMaterialForm(type, label) {
+    pendingMaterialType = type;
+    document.getElementById('material-form-title').textContent = `Add text — ${label}`;
+    document.getElementById('material-form').classList.remove('hidden');
+    document.getElementById('material-form').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  document.getElementById('material-cancel').addEventListener('click', () => {
+    document.getElementById('material-form').classList.add('hidden');
+    document.getElementById('material-name').value = '';
+    document.getElementById('material-text').value = '';
+  });
+  document.getElementById('material-save').addEventListener('click', async () => {
+    const errorBox = document.getElementById('material-error');
+    errorBox.classList.add('hidden');
+    const name = document.getElementById('material-name').value.trim();
+    const text = document.getElementById('material-text').value.trim();
+    if (!name || !text) {
+      errorBox.textContent = 'Name and content are both required.';
+      errorBox.classList.remove('hidden');
+      return;
+    }
+    const res = await fetch(`/api/interviews/${interviewId}/materials`, {
+      method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ type: pendingMaterialType, name, text }),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      errorBox.textContent = data.detail || 'Something went wrong.';
+      errorBox.classList.remove('hidden');
+      return;
+    }
+    document.getElementById('material-name').value = '';
+    document.getElementById('material-text').value = '';
+    document.getElementById('material-form').classList.add('hidden');
+    loadMaterials();
+  });
+
+  function openUploadFor(type) {
+    pendingMaterialType = type;
+    document.getElementById('material-file-input').click();
+  }
+  document.getElementById('material-file-input').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    const form = new FormData();
+    form.append('type', pendingMaterialType);
+    form.append('name', file.name);
+    form.append('file', file);
+    const res = await fetch(`/api/interviews/${interviewId}/materials/upload`, {
+      method: 'POST', headers: authHeaders(), body: form,
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      alert(data.detail || 'Upload failed.');
+      return;
+    }
+    loadMaterials();
+  });
+
+  async function toggleMaterialActive(id, active) {
+    await fetch(`/api/interviews/${interviewId}/materials/${id}`, {
+      method: 'PATCH', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ active }),
+    });
+  }
+  async function deleteMaterial(id) {
+    if (!confirm('Delete this material?')) return;
+    await fetch(`/api/interviews/${interviewId}/materials/${id}`, { method: 'DELETE', headers: authHeaders() });
+    loadMaterials();
+  }
+
+  // ---------- Q&A ----------
+  async function loadQA(search) {
+    const url = search
+      ? `/api/interviews/${interviewId}/qa?search=${encodeURIComponent(search)}`
+      : `/api/interviews/${interviewId}/qa`;
+    const res = await fetch(url, { headers: authHeaders() });
+    const entries = res.ok ? await res.json() : [];
+
+    const listEl = document.getElementById('qa-list');
+    if (entries.length === 0) {
+      listEl.innerHTML = '<p class="text-sm text-gray-500">No Q&amp;A yet — add one or upload a file of Q/A pairs.</p>';
+      return;
+    }
+    listEl.innerHTML = entries.map(e => `
+      <div class="border border-gray-200 rounded-xl p-4">
+        <div class="flex items-start justify-between gap-3 mb-1.5">
+          <p class="text-sm font-medium">${e.question}</p>
+          <div class="flex items-center gap-2 shrink-0">
+            ${e.use_count > 0 ? `<span class="text-xs text-gray-400">used ${e.use_count}x</span>` : ''}
+            <button onclick="deleteQA('${e.id}')" class="text-gray-400 hover:text-red-600">
+              <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+        <p class="text-sm text-gray-600 mb-2">${e.answer}</p>
+        <div class="flex items-center gap-1.5 flex-wrap">
+          ${e.category ? `<span class="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">${e.category}</span>` : ''}
+          ${e.tags.split(',').filter(t => t.trim()).map(t => `<span class="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">${t.trim()}</span>`).join('')}
+        </div>
+      </div>
+    `).join('');
+    if (window.lucide) lucide.createIcons();
+  }
+
+  document.getElementById('qa-add-btn').addEventListener('click', () => document.getElementById('qa-form').classList.remove('hidden'));
+  document.getElementById('qa-cancel').addEventListener('click', () => document.getElementById('qa-form').classList.add('hidden'));
+  document.getElementById('qa-save').addEventListener('click', async () => {
+    const errorBox = document.getElementById('qa-error');
+    errorBox.classList.add('hidden');
+    const question = document.getElementById('qa-question').value.trim();
+    const answer = document.getElementById('qa-answer').value.trim();
+    if (!question || !answer) {
+      errorBox.textContent = 'Question and answer are both required.';
+      errorBox.classList.remove('hidden');
+      return;
+    }
+    const res = await fetch(`/api/interviews/${interviewId}/qa`, {
+      method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ question, answer }),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      errorBox.textContent = data.detail || 'Something went wrong.';
+      errorBox.classList.remove('hidden');
+      return;
+    }
+    document.getElementById('qa-question').value = '';
+    document.getElementById('qa-answer').value = '';
+    document.getElementById('qa-form').classList.add('hidden');
+    loadQA();
+  });
+
+  document.getElementById('qa-upload-btn').addEventListener('click', () => document.getElementById('qa-file-input').click());
+  document.getElementById('qa-file-input').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`/api/interviews/${interviewId}/qa/upload`, { method: 'POST', headers: authHeaders(), body: form });
+    const data = await res.json();
+    if (!res.ok) {
+      alert(data.detail || 'Upload failed.');
+      return;
+    }
+    alert(`Added ${data.length} Q&A pair(s).`);
+    loadQA();
+  });
+
+  async function deleteQA(id) {
+    if (!confirm('Delete this entry?')) return;
+    await fetch(`/api/interviews/${interviewId}/qa/${id}`, { method: 'DELETE', headers: authHeaders() });
+    loadQA();
+  }
+
+  let qaSearchTimeout;
+  document.getElementById('qa-search').addEventListener('input', (e) => {
+    clearTimeout(qaSearchTimeout);
+    qaSearchTimeout = setTimeout(() => loadQA(e.target.value.trim()), 300);
+  });
+
+  // ---------- Copilot ----------
+  let recognition = null;
+  let isListening = false;
+
+  function appendMessage(role, text, badge) {
+    document.getElementById('empty-state')?.remove();
+    const wrap = document.createElement('div');
+    if (role === 'question') {
+      wrap.className = 'flex justify-end';
+      wrap.innerHTML = `<div class="bg-purple-600 text-white rounded-2xl rounded-br-md px-4 py-2.5 max-w-[80%] text-sm">${text}</div>`;
+    } else {
+      wrap.className = 'flex justify-start flex-col items-start gap-1';
+      wrap.innerHTML = `
+        ${badge ? `<span class="text-xs text-purple-600 pl-1">${badge}</span>` : ''}
+        <div class="bg-gray-50 border border-gray-100 rounded-2xl rounded-bl-md px-4 py-3 max-w-[85%] text-sm whitespace-pre-wrap">${text}</div>
+      `;
+    }
+    document.getElementById('conversation').appendChild(wrap);
+    return wrap;
+  }
+
+  function appendSources(sources) {
+    if (!sources || sources.length === 0) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'flex justify-start';
+    const chips = sources.slice(0, 3).map(s => `<span class="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-full">${s.title}</span>`).join(' ');
+    wrap.innerHTML = `<div class="flex flex-wrap gap-1.5 max-w-[85%] pl-1">${chips}</div>`;
+    document.getElementById('conversation').appendChild(wrap);
+  }
+
+  function scrollConversationToBottom() {
+    const el = document.getElementById('conversation');
+    el.scrollTop = el.scrollHeight;
+  }
+
+  async function loadConversationHistory() {
+    const res = await fetch(`/api/interviews/${interviewId}/history?limit=200`, { headers: authHeaders() });
+    const entries = res.ok ? await res.json() : [];
+    if (entries.length === 0) return;
+    // API returns newest-first; reverse for a chronological top-to-bottom transcript.
+    entries.reverse().forEach(e => {
+      appendMessage('question', e.question);
+      appendMessage('answer', e.answer);
+      appendSources(e.sources);
+    });
+    scrollConversationToBottom();
+  }
+
+  async function submitQuestion(question) {
+    if (!question.trim()) return;
+    const errorBox = document.getElementById('form-error');
+    errorBox.classList.add('hidden');
+    appendMessage('question', question);
+    scrollConversationToBottom();
+
+    const sendBtn = document.getElementById('send-btn');
+    sendBtn.disabled = true;
+
+    try {
+      const res = await fetch(`/api/interviews/${interviewId}/chat/ask`, {
+        method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ question }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        errorBox.textContent = data.detail || 'Something went wrong.';
+        errorBox.classList.remove('hidden');
+        return;
+      }
+      appendMessage('answer', data.answer, data.from_qa_bank ? 'From your Q&A' : null);
+      appendSources(data.sources);
+      scrollConversationToBottom();
+    } catch (err) {
+      errorBox.textContent = 'Could not reach the server. Try again.';
+      errorBox.classList.remove('hidden');
+    } finally {
+      sendBtn.disabled = false;
+    }
+  }
+
+  document.getElementById('ask-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const input = document.getElementById('question-input');
+    const question = input.value.trim();
+    input.value = '';
+    submitQuestion(question);
+  });
+
+  function updateMicUI() {
+    const btn = document.getElementById('mic-btn');
+    btn.classList.toggle('bg-red-50', isListening);
+    btn.classList.toggle('border-red-200', isListening);
+    btn.innerHTML = isListening
+      ? '<i data-lucide="mic-off" class="w-4 h-4 text-red-600"></i>'
+      : '<i data-lucide="mic" class="w-4 h-4"></i>';
+    if (window.lucide) lucide.createIcons();
+  }
+
+  document.getElementById('mic-btn').addEventListener('click', () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Speech recognition is not supported in this browser. Try Chrome.');
+      return;
+    }
+    if (isListening) {
+      isListening = false;
+      recognition?.stop();
+      updateMicUI();
+      return;
+    }
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+    recognition.onresult = (event) => {
+      let finalText = '';
+      let interimText = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) finalText += event.results[i][0].transcript;
+        else interimText += event.results[i][0].transcript;
+      }
+      if (finalText.trim()) submitQuestion(finalText.trim());
+      else document.getElementById('question-input').value = interimText;
+    };
+    recognition.onerror = () => { isListening = false; updateMicUI(); };
+    recognition.onend = () => { if (isListening) recognition.start(); };
+    recognition.start();
+    isListening = true;
+    updateMicUI();
+  });
+
+  // ---------- Init ----------
+  loadInterviewHeader();
+  loadMaterials();
+  loadQA();
+  loadConversationHistory();
+</script>
+</body>
+</html>

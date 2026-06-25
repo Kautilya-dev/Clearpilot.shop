@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from config import settings
-from routers import admin, auth, chat, history, knowledge, materials, pages
+from routers import admin, auth, chat, history, interviews, materials, pages, qa
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -14,8 +14,9 @@ app = FastAPI(title="ClearPilot API")
 # e.g. GET /materials (page) vs GET /materials (API list) would otherwise be ambiguous.
 app.include_router(auth.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
+app.include_router(interviews.router, prefix="/api")
 app.include_router(materials.router, prefix="/api")
-app.include_router(knowledge.router, prefix="/api")
+app.include_router(qa.router, prefix="/api")
 app.include_router(history.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(pages.router)
