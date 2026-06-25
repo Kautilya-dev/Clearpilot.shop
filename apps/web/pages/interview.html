@@ -403,8 +403,17 @@
     return div.innerHTML;
   }
 
-  function appendMessage(role, text, badge) {
+  // Newest exchange at the top, oldest at the bottom - each exchange is its own container
+  // so a new live question/answer can be inserted as a whole unit ahead of everything
+  // else, while still reading question-then-answer top-to-bottom within itself.
+  function createExchangeContainer() {
     document.getElementById('empty-state')?.remove();
+    const exchange = document.createElement('div');
+    exchange.className = 'space-y-3 pb-5 mb-5 border-b border-gray-100 last:border-0 last:pb-0 last:mb-0';
+    return exchange;
+  }
+
+  function appendMessage(container, role, text, badge) {
     const wrap = document.createElement('div');
     if (role === 'question') {
       wrap.className = 'flex justify-end';
@@ -416,53 +425,59 @@
         <div class="bg-gray-50 border border-gray-100 rounded-2xl rounded-bl-md px-4 py-3 max-w-[85%] text-sm answer-text">${text}</div>
       `;
     }
-    document.getElementById('conversation').appendChild(wrap);
+    container.appendChild(wrap);
     return wrap;
   }
 
-  function appendSources(sources) {
+  function appendSources(container, sources) {
     if (!sources || sources.length === 0) return;
     const wrap = document.createElement('div');
     wrap.className = 'flex justify-start';
     const chips = sources.slice(0, 3).map(s => `<span class="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-full">${s.title}</span>`).join(' ');
     wrap.innerHTML = `<div class="flex flex-wrap gap-1.5 max-w-[85%] pl-1">${chips}</div>`;
-    document.getElementById('conversation').appendChild(wrap);
+    container.appendChild(wrap);
   }
 
-  function appendTiming(event) {
+  function appendTiming(container, event) {
     const wrap = document.createElement('div');
     wrap.className = 'flex justify-start';
     const startedClock = new Date(event.started_at).toLocaleTimeString();
     const firstChunk = event.time_to_first_chunk_ms != null ? `first word in ${event.time_to_first_chunk_ms}ms · ` : '';
     const total = `done in ${(event.duration_ms / 1000).toFixed(2)}s`;
     wrap.innerHTML = `<div class="text-xs text-gray-400 pl-1">${startedClock} · ${firstChunk}${total}</div>`;
-    document.getElementById('conversation').appendChild(wrap);
+    container.appendChild(wrap);
   }
 
-  function scrollConversationToBottom() {
-    const el = document.getElementById('conversation');
-    el.scrollTop = el.scrollHeight;
+  function scrollConversationToTop() {
+    document.getElementById('conversation').scrollTop = 0;
   }
 
   async function loadConversationHistory() {
     const res = await fetch(`/api/interviews/${interviewId}/history?limit=200`, { headers: authHeaders() });
     const entries = res.ok ? await res.json() : [];
     if (entries.length === 0) return;
-    // API returns newest-first; reverse for a chronological top-to-bottom transcript.
-    entries.reverse().forEach(e => {
-      appendMessage('question', e.question);
-      appendMessage('answer', renderMarkdown(e.answer));
-      appendSources(e.sources);
+    // API already returns newest-first - append each exchange in that order so the
+    // newest ends up at the top of #conversation, oldest at the bottom.
+    const conversationEl = document.getElementById('conversation');
+    entries.forEach(e => {
+      const exchange = createExchangeContainer();
+      conversationEl.appendChild(exchange);
+      appendMessage(exchange, 'question', e.question);
+      appendMessage(exchange, 'answer', renderMarkdown(e.answer));
+      appendSources(exchange, e.sources);
     });
-    scrollConversationToBottom();
+    scrollConversationToTop();
   }
 
   async function submitQuestion(question) {
     if (!question.trim()) return;
     const errorBox = document.getElementById('form-error');
     errorBox.classList.add('hidden');
-    appendMessage('question', question);
-    scrollConversationToBottom();
+
+    const exchange = createExchangeContainer();
+    document.getElementById('conversation').prepend(exchange);
+    appendMessage(exchange, 'question', question);
+    scrollConversationToTop();
 
     const sendBtn = document.getElementById('send-btn');
     sendBtn.disabled = true;
@@ -504,15 +519,14 @@
             // from_qa_bank isn't known yet at this point - an AI judge now verifies any
             // keyword-matched candidate before it's used, so the badge (if any) gets set
             // once 'done' arrives instead of up front.
-            answerWrap = appendMessage('answer', '', null);
+            answerWrap = appendMessage(exchange, 'answer', '', null);
             answerEl = answerWrap.querySelector('.answer-text');
             badgeEl = answerWrap.querySelector('.qa-badge');
-            scrollConversationToBottom();
+            scrollConversationToTop();
           } else if (event.type === 'chunk') {
             if (answerEl) {
               rawAnswerText += event.text;
               answerEl.innerHTML = renderMarkdown(rawAnswerText);
-              scrollConversationToBottom();
             }
           } else if (event.type === 'error') {
             errorBox.textContent = event.detail || 'Something went wrong.';
@@ -522,9 +536,8 @@
               badgeEl.textContent = 'From your Q&A';
               badgeEl.classList.remove('hidden');
             }
-            appendSources(event.sources);
-            appendTiming(event);
-            scrollConversationToBottom();
+            appendSources(exchange, event.sources);
+            appendTiming(exchange, event);
           }
         }
       }
