@@ -14,7 +14,7 @@ The saved Q&A pair below matched the question by keyword search - that match may
 
 1. If the saved answer does NOT actually address what's being asked, respond with exactly: {NO_MATCH_SENTINEL}
 2. If it DOES address the question and is already personal/specific (uses "I", concrete details), return it verbatim, unchanged.
-3. If it's on-topic but generic (a textbook explanation, or references "your project"/"your experience" without real specifics), rewrite it briefly in first person using the resume/scenario details actually provided below, keeping the same core technical facts as the saved answer.
+3. If it's on-topic but generic (a textbook explanation, or references "your project"/"your experience" without real specifics), rewrite it in first person using the resume/scenario details actually provided below, keeping the same core technical facts as the saved answer. Expand it into a thorough, detailed answer rather than a short summary - explain reasoning and steps, and use markdown (**bold** for key terms, lists for multi-step processes) where it helps readability.
 
 Respond with ONLY the final answer text, or exactly {NO_MATCH_SENTINEL}. No preamble, no labels, no explanation."""
 

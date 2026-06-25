@@ -6,7 +6,9 @@
 <title>ClearPilot — Interview</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/lucide@latest"></script>
-<link rel="stylesheet" href="/assets/css/styles.css?v=2" />
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
+<link rel="stylesheet" href="/assets/css/styles.css?v=3" />
 </head>
 <body class="bg-white text-gray-900 antialiased h-screen overflow-hidden">
 
@@ -137,6 +139,10 @@
 
   function authHeaders(extra) {
     return Object.assign({ Authorization: `Bearer ${getToken()}` }, extra || {});
+  }
+
+  function renderMarkdown(text) {
+    return DOMPurify.sanitize(marked.parse(text || '', { breaks: true }));
   }
 
   // ---------- Tabs ----------
@@ -391,17 +397,23 @@
   let recognition = null;
   let isListening = false;
 
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
   function appendMessage(role, text, badge) {
     document.getElementById('empty-state')?.remove();
     const wrap = document.createElement('div');
     if (role === 'question') {
       wrap.className = 'flex justify-end';
-      wrap.innerHTML = `<div class="bg-purple-600 text-white rounded-2xl rounded-br-md px-4 py-2.5 max-w-[80%] text-sm">${text}</div>`;
+      wrap.innerHTML = `<div class="bg-purple-600 text-white rounded-2xl rounded-br-md px-4 py-2.5 max-w-[80%] text-sm">${escapeHtml(text)}</div>`;
     } else {
       wrap.className = 'flex justify-start flex-col items-start gap-1';
       wrap.innerHTML = `
         <span class="text-xs text-purple-600 pl-1 qa-badge ${badge ? '' : 'hidden'}">${badge || ''}</span>
-        <div class="bg-gray-50 border border-gray-100 rounded-2xl rounded-bl-md px-4 py-3 max-w-[85%] text-sm whitespace-pre-wrap answer-text">${text}</div>
+        <div class="bg-gray-50 border border-gray-100 rounded-2xl rounded-bl-md px-4 py-3 max-w-[85%] text-sm answer-text">${text}</div>
       `;
     }
     document.getElementById('conversation').appendChild(wrap);
@@ -439,7 +451,7 @@
     // API returns newest-first; reverse for a chronological top-to-bottom transcript.
     entries.reverse().forEach(e => {
       appendMessage('question', e.question);
-      appendMessage('answer', e.answer);
+      appendMessage('answer', renderMarkdown(e.answer));
       appendSources(e.sources);
     });
     scrollConversationToBottom();
@@ -458,6 +470,7 @@
     let answerWrap = null;
     let answerEl = null;
     let badgeEl = null;
+    let rawAnswerText = '';
 
     try {
       const res = await fetch(`/api/interviews/${interviewId}/chat/ask`, {
@@ -497,7 +510,8 @@
             scrollConversationToBottom();
           } else if (event.type === 'chunk') {
             if (answerEl) {
-              answerEl.textContent += event.text;
+              rawAnswerText += event.text;
+              answerEl.innerHTML = renderMarkdown(rawAnswerText);
               scrollConversationToBottom();
             }
           } else if (event.type === 'error') {
