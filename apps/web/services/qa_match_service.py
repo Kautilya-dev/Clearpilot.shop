@@ -14,13 +14,16 @@ class QAMatch:
 
 
 async def find_matching_qa(db: AsyncSession, interview_id: UUID, question: str) -> QAMatch | None:
-    """Full-text match against this interview's own saved Q&A bank - same to_tsvector/
-    websearch_to_tsquery technique used for document retrieval, just computed on the fly
-    (no persisted column/index) since qa_entries is small once scoped to one interview.
-    A hit here skips the OpenAI call entirely: instant, free, and zero hallucination risk
-    since it's the user's own vetted answer. See has_enough_substantive_terms for why a
-    minimum-term gate is required before attempting this - a wrong answer served with full
-    confidence is worse than the extra AI call the gate sometimes costs.
+    """Full-text CANDIDATE match against this interview's own saved Q&A bank - same
+    to_tsvector/websearch_to_tsquery technique used for document retrieval, computed on the
+    fly (no persisted column/index) since qa_entries is small once scoped to one interview.
+
+    This is a cheap pre-filter, not a final decision - keyword overlap alone can't tell
+    coincidental from real relevance, or generic saved content from something that needs
+    personalizing. The caller (routers/chat.py) runs any candidate this returns through
+    services/qa_judge_service.py before deciding whether to actually use it. See
+    has_enough_substantive_terms for why a minimum-term gate still matters even as a
+    pre-filter - no point paying for a judge call on a single common surviving word.
     """
     if not await has_enough_substantive_terms(db, question):
         return None

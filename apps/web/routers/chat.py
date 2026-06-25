@@ -13,6 +13,7 @@ from db.base import SessionLocal, get_db
 from db.models import HistoryEntry, Interview, QAEntry, User
 from routers.auth import get_current_user
 from routers.interviews import get_interview_subject_ids, get_owned_interview
+from services.qa_judge_service import judge_and_maybe_answer
 from services.qa_match_service import find_matching_qa
 from services.rag_service import build_system_prompt, generate_answer_stream, get_active_material, retrieve_relevant_docs
 
@@ -45,13 +46,10 @@ async def ask(
     interview_id = interview.id
     user_id = current_user.id
 
-    # Check this interview's own Q&A bank first - if the user already saved an answer to
-    # this question, skip the OpenAI round-trip entirely: instant, free, and it's their
-    # own vetted answer rather than a fresh AI generation.
-    qa_match = await find_matching_qa(db, interview_id, question)
-    if qa_match:
-        await db.execute(update(QAEntry).where(QAEntry.id == qa_match.id).values(use_count=QAEntry.use_count + 1))
-        await db.commit()
+    # A keyword candidate from the Q&A bank, if any - not a final decision. Whether it's
+    # actually used gets judged inside stream() once resume/JD/scenario are loaded, since
+    # the judge weighs candidate relevance against them too.
+    qa_candidate = await find_matching_qa(db, interview_id, question)
 
     async def stream():
         started_monotonic = time.monotonic()
@@ -59,22 +57,31 @@ async def ask(
         first_chunk_monotonic = None
         full_text = ""
         sources_payload = []
+        used_qa_bank = False
 
-        yield _sse({"type": "start", "from_qa_bank": bool(qa_match), "started_at": started_iso})
+        yield _sse({"type": "start", "started_at": started_iso})
 
         # The `db` session injected via Depends is torn down once this route function
         # returns the StreamingResponse - FastAPI closes yield-dependencies before the
         # streamed body finishes sending, not after. Everything from here on needs its
         # own session.
         async with SessionLocal() as stream_db:
-            if qa_match:
-                full_text = qa_match.answer
-                first_chunk_monotonic = time.monotonic()
-                yield _sse({"type": "chunk", "text": full_text})
-            else:
-                resume = await get_active_material(stream_db, interview_id, "resume")
-                jd = await get_active_material(stream_db, interview_id, "job_description")
-                scenario = await get_active_material(stream_db, interview_id, "real_time_scenario")
+            resume = await get_active_material(stream_db, interview_id, "resume")
+            jd = await get_active_material(stream_db, interview_id, "job_description")
+            scenario = await get_active_material(stream_db, interview_id, "real_time_scenario")
+
+            if qa_candidate:
+                try:
+                    judged = await judge_and_maybe_answer(question, qa_candidate, resume, jd, scenario)
+                except httpx.HTTPError:
+                    judged = None  # judge call failing shouldn't block answering - fall through
+                if judged:
+                    full_text = judged
+                    used_qa_bank = True
+                    first_chunk_monotonic = time.monotonic()
+                    yield _sse({"type": "chunk", "text": full_text})
+
+            if not used_qa_bank:
                 subject_ids = await get_interview_subject_ids(stream_db, interview_id)
                 doc_chunks = await retrieve_relevant_docs(stream_db, question, subject_ids)
                 system_prompt = build_system_prompt(resume, jd, scenario, doc_chunks)
@@ -90,6 +97,11 @@ async def ask(
                     yield _sse({"type": "error", "detail": f"AI provider error: {e}"})
                     return
 
+            if used_qa_bank:
+                await stream_db.execute(
+                    update(QAEntry).where(QAEntry.id == qa_candidate.id).values(use_count=QAEntry.use_count + 1)
+                )
+
             stream_db.add(HistoryEntry(
                 user_id=user_id, interview_id=interview_id, question=question, answer=full_text,
                 sources=json.dumps(sources_payload),
@@ -100,7 +112,7 @@ async def ask(
         yield _sse({
             "type": "done",
             "sources": sources_payload,
-            "from_qa_bank": bool(qa_match),
+            "from_qa_bank": used_qa_bank,
             "started_at": started_iso,
             "ended_at": _now_iso(),
             "time_to_first_chunk_ms": (

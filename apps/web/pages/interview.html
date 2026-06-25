@@ -488,7 +488,10 @@
           const event = JSON.parse(rawEvent.slice(6));
 
           if (event.type === 'start') {
-            answerWrap = appendMessage('answer', '', event.from_qa_bank ? 'From your Q&A' : null);
+            // from_qa_bank isn't known yet at this point - an AI judge now verifies any
+            // keyword-matched candidate before it's used, so the badge (if any) gets set
+            // once 'done' arrives instead of up front.
+            answerWrap = appendMessage('answer', '', null);
             answerEl = answerWrap.querySelector('.answer-text');
             badgeEl = answerWrap.querySelector('.qa-badge');
             scrollConversationToBottom();
@@ -501,6 +504,10 @@
             errorBox.textContent = event.detail || 'Something went wrong.';
             errorBox.classList.remove('hidden');
           } else if (event.type === 'done') {
+            if (event.from_qa_bank && badgeEl) {
+              badgeEl.textContent = 'From your Q&A';
+              badgeEl.classList.remove('hidden');
+            }
             appendSources(event.sources);
             appendTiming(event);
             scrollConversationToBottom();
