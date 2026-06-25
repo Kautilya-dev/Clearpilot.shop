@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from db.models import Material
+from services.text_relevance_service import has_enough_substantive_terms
 
 OPENAI_CHAT_MODEL = "gpt-5.4"
 
@@ -31,10 +32,24 @@ class RetrievedChunk:
         self.rank = rank
 
 
+# Calibrated against the real SAP corpus: clearly-relevant matches scored 0.157-0.994,
+# while questions with only coincidental term overlap (e.g. "Can you walk me through your
+# experience?" sharing "walk"/"experience" with an unrelated chunk) scored <= 2.7e-07 - a
+# 1.5M-to-1 gap. 0.01 sits comfortably in that gap with margin on both sides.
+MIN_DOC_RANK = 0.01
+
+
 async def retrieve_relevant_docs(
     db: AsyncSession, question: str, subject_ids: list[UUID], limit: int = 5
 ) -> list[RetrievedChunk]:
     if not subject_ids:
+        return []
+    # Same gate as the Q&A-bank shortcut: a short, mostly-stopword question (e.g. "Tell me
+    # about yourself") can reduce to one common surviving word and pull in unrelated doc
+    # chunks as "reference material" purely on that coincidental overlap - confirmed live,
+    # e.g. that exact question matched OAuth/CORS chunks at near-zero rank. Better to ground
+    # on nothing than on noise.
+    if not await has_enough_substantive_terms(db, question):
         return []
     stmt = text(
         """
@@ -42,11 +57,14 @@ async def retrieve_relevant_docs(
         FROM documents
         WHERE search_vector @@ websearch_to_tsquery('english', :q)
           AND subject_id IN :subject_ids
+          AND ts_rank(search_vector, websearch_to_tsquery('english', :q)) > :min_rank
         ORDER BY rank DESC
         LIMIT :limit
         """
     ).bindparams(bindparam("subject_ids", expanding=True))
-    result = await db.execute(stmt, {"q": question, "subject_ids": subject_ids, "limit": limit})
+    result = await db.execute(
+        stmt, {"q": question, "subject_ids": subject_ids, "limit": limit, "min_rank": MIN_DOC_RANK}
+    )
     return [RetrievedChunk(row.title, row.breadcrumb, row.text, row.rank) for row in result]
 
 
