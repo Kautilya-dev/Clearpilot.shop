@@ -26,30 +26,44 @@
 </header>
 
 <main class="max-w-sm mx-auto px-6 py-20">
-  <h1 class="text-2xl font-semibold tracking-tight mb-1">Log in</h1>
-  <p class="text-sm text-gray-500 mb-6">Welcome back.</p>
-
-  <div id="form-error" class="alert-error mb-4 hidden"></div>
-
-  <form id="login-form" class="space-y-4">
-    <div>
-      <label class="text-sm font-medium text-gray-700 mb-1.5 block">Email</label>
-      <input type="email" name="email" required class="field-input" placeholder="you@example.com" />
+  <div id="desktop-waiting" class="hidden text-center py-10">
+    <div class="w-12 h-12 rounded-2xl bg-purple-50 flex items-center justify-center mx-auto mb-4">
+      <i data-lucide="laptop" class="w-6 h-6 text-purple-600"></i>
     </div>
-    <div>
-      <label class="text-sm font-medium text-gray-700 mb-1.5 block">Password</label>
-      <input type="password" name="password" required class="field-input" placeholder="••••••••" />
-    </div>
-    <button type="submit" class="btn-primary w-full justify-center">Log in</button>
-  </form>
+    <h1 class="text-xl font-semibold tracking-tight mb-1">Completing sign-in...</h1>
+    <p class="text-sm text-gray-500">Taking you back to the ClearPilot desktop app.</p>
+  </div>
 
-  <p class="text-sm text-gray-500 mt-6 text-center">
-    New here? <a href="/register" class="text-purple-600 hover:underline font-medium">Create an account</a>
-  </p>
+  <div id="login-view">
+    <h1 class="text-2xl font-semibold tracking-tight mb-1">Log in</h1>
+    <p class="text-sm text-gray-500 mb-6">Welcome back.</p>
+
+    <div id="form-error" class="alert-error mb-4 hidden"></div>
+
+    <form id="login-form" class="space-y-4">
+      <div>
+        <label class="text-sm font-medium text-gray-700 mb-1.5 block">Email</label>
+        <input type="email" name="email" required class="field-input" placeholder="you@example.com" />
+      </div>
+      <div>
+        <label class="text-sm font-medium text-gray-700 mb-1.5 block">Password</label>
+        <input type="password" name="password" required class="field-input" placeholder="••••••••" />
+      </div>
+      <button type="submit" class="btn-primary w-full justify-center">Log in</button>
+    </form>
+
+    <p class="text-sm text-gray-500 mt-6 text-center">
+      New here? <a href="/register" class="text-purple-600 hover:underline font-medium">Create an account</a>
+    </p>
+  </div>
 </main>
 
 <script src="/assets/js/app.js?v=2"></script>
 <script>
+  const desktopParams = new URLSearchParams(window.location.search);
+  const isDesktopSignIn = desktopParams.get('desktop') === '1';
+  const desktopCallbackPort = desktopParams.get('port');
+
   document.getElementById('login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const errorBox = document.getElementById('form-error');
@@ -70,6 +84,34 @@
         errorBox.classList.remove('hidden');
         return;
       }
+
+      if (isDesktopSignIn) {
+        if (!desktopCallbackPort) {
+          errorBox.textContent = 'Missing callback port - open this page from the ClearPilot desktop app.';
+          errorBox.classList.remove('hidden');
+          return;
+        }
+        const codeRes = await fetch('/api/auth/desktop-code', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${data.access_token}` },
+        });
+        const codeData = await codeRes.json();
+        if (!codeRes.ok) {
+          errorBox.textContent = codeData.detail || 'Could not complete desktop sign-in.';
+          errorBox.classList.remove('hidden');
+          return;
+        }
+        document.getElementById('login-view').classList.add('hidden');
+        document.getElementById('desktop-waiting').classList.remove('hidden');
+        if (window.lucide) lucide.createIcons();
+        // A plain HTTP request to localhost needs no OS-level registration (unlike the
+        // clearpilot:// custom protocol this replaced, which Windows silently refused to
+        // invoke even though it was registered correctly) - the desktop app's own local
+        // server receives this and renders the final "you're signed in" response itself.
+        window.location.href = `http://127.0.0.1:${desktopCallbackPort}/callback?code=${encodeURIComponent(codeData.code)}`;
+        return;
+      }
+
       setToken(data.access_token);
       window.location.href = '/dashboard';
     } catch (err) {

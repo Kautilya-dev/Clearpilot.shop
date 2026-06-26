@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db.base import get_db
 from db.models import User
 from services.auth_service import create_access_token, decode_access_token, hash_password, verify_password
+from services.desktop_auth_service import consume_desktop_code, create_desktop_code
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 _bearer = HTTPBearer()
@@ -75,6 +76,40 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     if not user or not verify_password(body.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
 
+    return TokenResponse(access_token=create_access_token(user.id))
+
+
+class DesktopCodeResponse(BaseModel):
+    code: str
+
+
+@router.post("/desktop-code", response_model=DesktopCodeResponse)
+async def get_desktop_code(current_user: User = Depends(get_current_user)):
+    """Called from the browser, right after a normal password login, when that login
+    was opened by the desktop app's "Sign in with Browser" flow. Mints a short-lived,
+    single-use code the browser then hands to the desktop app via a clearpilot:// redirect."""
+    try:
+        code = await create_desktop_code(current_user.id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+    return DesktopCodeResponse(code=code)
+
+
+class DesktopExchangeRequest(BaseModel):
+    code: str
+
+
+@router.post("/desktop-exchange", response_model=TokenResponse)
+async def desktop_exchange(body: DesktopExchangeRequest, db: AsyncSession = Depends(get_db)):
+    """Called by the desktop app itself with the code it received via the clearpilot://
+    redirect, to get a real JWT. Deliberately unauthenticated (there's no token yet) -
+    the code itself, valid for 5 minutes and single-use, is the credential here."""
+    user_id = await consume_desktop_code(body.code)
+    if user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code")
+    user = await db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code")
     return TokenResponse(access_token=create_access_token(user.id))
 
 

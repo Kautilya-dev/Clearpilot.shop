@@ -6,5 +6,19 @@ __pycache__/
 .env.local
 dist/
 out/
-build/
 *.log
+
+# Electron native addon build scratch (node-gyp/MSBuild) - the compiled .node binary
+# itself IS committed (apps/desktop/native/stealth/build/Release/stealth.node), everything
+# else alongside it is regenerable scratch from the last local compile.
+native/**/build/**/*.obj
+native/**/build/**/*.pdb
+native/**/build/**/*.lib
+native/**/build/**/*.exp
+native/**/build/**/*.iobj
+native/**/build/**/*.ipdb
+native/**/build/obj/
+native/**/build/*.sln
+native/**/build/*.vcxproj
+native/**/build/*.vcxproj.filters
+native/**/build/config.gypi

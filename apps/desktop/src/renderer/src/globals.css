@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+
+/* Mirrors apps/web/static/css/styles.css's .sidebar-link so the desktop app's sidebar
+   looks and behaves like the web app's. */
+.sidebar-link {
+  display: flex; align-items: center; gap: 0.625rem;
+  padding: 0.5rem 0.75rem; border-radius: 0.5rem;
+  font-size: 0.875rem; font-weight: 500; color: #6b7280;
+  transition: background .15s, color .15s; cursor: pointer; border: none; background: none;
+  width: 100%; text-align: left;
+}
+.sidebar-link:hover { background: #f9fafb; color: #111827; }
+.sidebar-link.active { background: #f5f3ff; color: #6d28d9; }

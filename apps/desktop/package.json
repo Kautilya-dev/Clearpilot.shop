@@ -1,6 +1,67 @@
 {
   "name": "@clearpilot/desktop",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
-  "description": "ClearPilot desktop app (Electron) - scaffolded, not yet built"
+  "description": "ClearPilot desktop copilot - login with your ClearPilot account, pick an interview, ask live with a stealth screen-share-hidden overlay",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build && electron-builder --win --x64",
+    "build:vite": "electron-vite build",
+    "preview": "electron-vite preview",
+    "build:dir": "electron-builder --win --x64 --dir"
+  },
+  "build": {
+    "appId": "com.clearpilot.desktop",
+    "productName": "ClearPilot",
+    "copyright": "Copyright © 2026 ClearPilot",
+    "nodeGypRebuild": false,
+    "buildDependenciesFromSource": false,
+    "npmRebuild": false,
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ClearPilot"
+    },
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*",
+      "native/**/*",
+      "!native/**/build/**/*.{obj,pdb,lib,exp,iobj,ipdb}",
+      "!native/**/build/obj/**",
+      "!native/**/build/*.{sln,vcxproj}",
+      "!native/**/build/*.vcxproj.filters",
+      "!native/**/build/config.gypi",
+      "node_modules/**/*"
+    ],
+    "asarUnpack": [
+      "native/**/*"
+    ]
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
+    "autoprefixer": "^10.4.27",
+    "electron": "^39.2.7",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^5.0.0",
+    "node-addon-api": "^8.5.0",
+    "postcss": "^8.5.8",
+    "tailwindcss": "^3.4.17",
+    "vite": "^7.3.1"
+  },
+  "dependencies": {
+    "lucide-react": "^0.577.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^5.0.12"
+  }
 }
