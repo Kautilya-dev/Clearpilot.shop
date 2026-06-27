@@ -22,7 +22,10 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1000,
     height: 720,
+    minWidth: 360,
+    minHeight: 480,
     frame: false,
+    resizable: true,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -128,6 +131,24 @@ function startBrowserSignIn() {
 function registerIpcHandlers() {
   ipcMain.handle('window:close', () => {
     mainWindow?.close()
+  })
+
+  let isFloatMode = false
+  const FLOAT_SIZE = [360, 560]
+  const NORMAL_SIZE = [1000, 720]
+
+  ipcMain.handle('window:float', () => {
+    if (!mainWindow) return
+    isFloatMode = !isFloatMode
+    if (isFloatMode) {
+      mainWindow.setSize(...FLOAT_SIZE)
+      mainWindow.setAlwaysOnTop(true)
+    } else {
+      mainWindow.setSize(...NORMAL_SIZE)
+      mainWindow.setAlwaysOnTop(false)
+      mainWindow.center()
+    }
+    mainWindow.webContents.send('window:floatChanged', { isFloat: isFloatMode })
   })
 
   ipcMain.handle('auth:openBrowserSignIn', () => {
@@ -409,7 +430,11 @@ function registerIpcHandlers() {
 
   ipcMain.handle('stealth:toggle', async (event, enabled) => {
     if (!stealth) return { success: false, error: 'Stealth not initialized' }
-    return await stealth.toggleStealth(enabled)
+    const result = await stealth.toggleStealth(enabled)
+    if (result.success) {
+      mainWindow?.webContents.send('stealth:changed', { enabled })
+    }
+    return result
   })
 
   ipcMain.handle('stealth:getStatus', async () => {
