@@ -29,4 +29,6 @@ async def mint_ephemeral_token(instructions: str) -> dict:
             },
         )
         response.raise_for_status()
-        return response.json()
+        # GA response shape: { "client_secret": { "value": "eph_...", "expires_at": ... }, ... }
+        # Return only the inner object so the router can read result["value"] / result["expires_at"].
+        return response.json()["client_secret"]

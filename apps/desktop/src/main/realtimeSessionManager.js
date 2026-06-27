@@ -7,7 +7,7 @@ const WebSocket = require('ws')
 // equivalent server-side (qa_match_service.py + qa_judge_service.py via /chat/ask) - a
 // transcribed question is just fed into that existing pipeline by the caller, so every
 // answer-generation/local-matching concern from the original is intentionally dropped here.
-const REALTIME_MODEL = 'gpt-realtime-2'
+const REALTIME_MODEL = 'gpt-4o-realtime-preview'
 const REALTIME_URL = `wss://api.openai.com/v1/realtime?model=${REALTIME_MODEL}`
 
 class RealtimeSessionManager {
@@ -63,7 +63,15 @@ class RealtimeSessionManager {
             instructions,
             modalities: ['text'],
             input_audio_format: 'pcm16',
-            input_audio_transcription: { model: 'whisper-1' }
+            input_audio_transcription: { model: 'whisper-1' },
+            // Server VAD detects speech turns automatically — without this, the API
+            // never fires conversation.item.input_audio_transcription.completed.
+            turn_detection: {
+              type: 'server_vad',
+              threshold: 0.5,
+              prefix_padding_ms: 300,
+              silence_duration_ms: 800
+            }
           }
         }
         try {
