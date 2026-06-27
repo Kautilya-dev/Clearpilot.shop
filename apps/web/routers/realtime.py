@@ -23,7 +23,7 @@ class RealtimeTokenRequest(BaseModel):
 
 class RealtimeTokenResponse(BaseModel):
     client_secret: str
-    expires_at: str
+    expires_at: int  # unix timestamp seconds, per OpenAI's actual response shape
     model: str
 
 
