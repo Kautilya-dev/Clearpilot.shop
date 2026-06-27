@@ -2,11 +2,6 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('clearpilot', {
   closeWindow: () => ipcRenderer.invoke('window:close'),
-  floatWindow: () => ipcRenderer.invoke('window:float'),
-  onFloatChanged: (callback) => ipcRenderer.on('window:floatChanged', (event, data) => callback(data)),
-  offFloatChanged: () => ipcRenderer.removeAllListeners('window:floatChanged'),
-  onStealthChanged: (callback) => ipcRenderer.on('stealth:changed', (event, data) => callback(data)),
-  offStealthChanged: () => ipcRenderer.removeAllListeners('stealth:changed'),
 
   openBrowserSignIn: () => ipcRenderer.invoke('auth:openBrowserSignIn'),
   getCurrentUser: () => ipcRenderer.invoke('auth:getCurrentUser'),

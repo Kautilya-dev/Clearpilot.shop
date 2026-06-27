@@ -1,54 +1,31 @@
 import { useEffect, useState } from 'react'
-import { Compass, LogOut, X, Minus } from 'lucide-react'
+import { Compass, LogOut, X } from 'lucide-react'
 import InterviewWorkspace from './InterviewWorkspace'
 import PickerScreen from './PickerScreen'
 import HistoryScreen from './HistoryScreen'
 import SettingsScreen from './SettingsScreen'
 import { applyStyles } from './applyStyles'
 
-// Mac-style frameless title bar: traffic lights on left, app name centred.
-// Close is always visible. Float (PiP) only appears when Stealth is enabled.
-// No minimize, no maximize — intentional and permanent.
-function TitleBar({ isStealthEnabled, isFloat }) {
+// Thin draggable strip replacing the OS title bar (window is frameless).
+// Only a close button — no minimize, no maximize. This is intentional and permanent.
+function TitleBar() {
   return (
     <div
-      className="h-8 shrink-0 flex items-center px-3 bg-white border-b border-gray-100 select-none"
+      className="h-8 shrink-0 flex items-center justify-between px-4 bg-white border-b border-gray-100 select-none"
       style={{ WebkitAppRegion: 'drag' }}
     >
-      {/* Traffic lights — no-drag so clicks work */}
-      <div className="flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' }}>
-        {/* Red — close */}
-        <button
-          onClick={() => window.clearpilot.closeWindow()}
-          title="Close"
-          className="w-3 h-3 rounded-full bg-[#ff5f57] border border-[#e0443e]/40 flex items-center justify-center group"
-        >
-          <X className="w-1.5 h-1.5 text-[#820005] opacity-0 group-hover:opacity-100 transition-opacity" />
-        </button>
-
-        {/* Yellow — float/PiP, only when stealth is enabled */}
-        {isStealthEnabled && (
-          <button
-            onClick={() => window.clearpilot.floatWindow()}
-            title={isFloat ? 'Exit float' : 'Float window (PiP)'}
-            className={`w-3 h-3 rounded-full border flex items-center justify-center group transition-colors ${
-              isFloat
-                ? 'bg-[#28c941] border-[#1aab2c]/40'
-                : 'bg-[#febc2e] border-[#d49012]/40'
-            }`}
-          >
-            <Minus className="w-1.5 h-1.5 text-[#985700] opacity-0 group-hover:opacity-100 transition-opacity" />
-          </button>
-        )}
-      </div>
-
-      {/* Centred app name */}
-      <span className="flex-1 text-center text-xs text-gray-400 pointer-events-none">
+      <span className="text-xs text-gray-400 flex items-center gap-1.5">
+        <Compass className="w-3 h-3 text-purple-500" />
         ClearPilot
       </span>
-
-      {/* Spacer to visually balance the left traffic lights */}
-      <div className={`flex items-center gap-1.5 ${isStealthEnabled ? 'w-[27px]' : 'w-3'}`} />
+      <button
+        onClick={() => window.clearpilot.closeWindow()}
+        title="Close"
+        style={{ WebkitAppRegion: 'no-drag' }}
+        className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+      >
+        <X className="w-3 h-3" />
+      </button>
     </div>
   )
 }
@@ -96,8 +73,6 @@ export default function App() {
   const [waiting, setWaiting] = useState(false)
   const [error, setError] = useState('')
   const [selectedInterview, setSelectedInterview] = useState(null)
-  const [isStealthEnabled, setIsStealthEnabled] = useState(false)
-  const [isFloat, setIsFloat] = useState(false)
 
   useEffect(() => {
     window.clearpilot.getCurrentUser().then((res) => {
@@ -124,17 +99,8 @@ export default function App() {
 
   useEffect(() => {
     window.clearpilot.getSettings().then((res) => {
-      if (res.success) {
-        applyStyles(res.settings.styles)
-        setIsStealthEnabled(res.settings.behavior?.stealthMode || false)
-      }
+      if (res.success) applyStyles(res.settings.styles)
     })
-    window.clearpilot.onStealthChanged(({ enabled }) => setIsStealthEnabled(enabled))
-    window.clearpilot.onFloatChanged(({ isFloat: f }) => setIsFloat(f))
-    return () => {
-      window.clearpilot.offStealthChanged()
-      window.clearpilot.offFloatChanged()
-    }
   }, [])
 
   function handleSignIn() {
@@ -163,7 +129,7 @@ export default function App() {
   if (screen === 'loading') {
     return (
       <div className="h-screen flex flex-col overflow-hidden font-sans">
-        <TitleBar isStealthEnabled={isStealthEnabled} isFloat={isFloat} />
+        <TitleBar />
         <div className="flex-1 flex items-center justify-center bg-white">
           <p className="text-gray-400 text-sm">Loading...</p>
         </div>
@@ -174,7 +140,7 @@ export default function App() {
   if (screen === 'login') {
     return (
       <div className="h-screen flex flex-col overflow-hidden font-sans">
-        <TitleBar isStealthEnabled={isStealthEnabled} isFloat={isFloat} />
+        <TitleBar />
         <div className="flex-1 flex items-center justify-center bg-white">
           <div className="w-80 text-center">
             <h1 className="text-lg font-semibold mb-2 flex items-center justify-center gap-2">
@@ -202,7 +168,7 @@ export default function App() {
 
   return (
     <div className="h-screen flex flex-col overflow-hidden font-sans">
-      <TitleBar isStealthEnabled={isStealthEnabled} isFloat={isFloat} />
+      <TitleBar />
       <div className="flex-1 flex overflow-hidden">
         <Sidebar user={user} activeScreen={screen} onNavigate={handleNavigate} onLogout={handleLogout} />
 
