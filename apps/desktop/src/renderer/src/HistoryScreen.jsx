@@ -3,6 +3,34 @@ import InterviewCard from './InterviewCard'
 
 const FILTERS = ['all', 'active', 'completed', 'archived']
 
+function startOfDay(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
+function bucketLabel(isoString) {
+  const itemDay = startOfDay(new Date(isoString))
+  const diffDays = Math.round((startOfDay(new Date()) - itemDay) / 86400000)
+  if (diffDays === 0) return 'Today'
+  if (diffDays === 1) return 'Yesterday'
+  return itemDay.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
+}
+
+// Interviews already arrive newest-first from the API, so grouping in encounter order
+// keeps Today first, then Yesterday, then descending calendar dates - no re-sort needed.
+function groupByDate(interviews) {
+  const groups = []
+  for (const interview of interviews) {
+    const label = bucketLabel(interview.created_at)
+    let group = groups.find((g) => g.label === label)
+    if (!group) {
+      group = { label, items: [] }
+      groups.push(group)
+    }
+    group.items.push(interview)
+  }
+  return groups
+}
+
 export default function HistoryScreen({ onSelectInterview }) {
   const [interviews, setInterviews] = useState([])
   const [error, setError] = useState('')
@@ -31,6 +59,7 @@ export default function HistoryScreen({ onSelectInterview }) {
   }
 
   const filtered = filter === 'all' ? interviews : interviews.filter((i) => i.state === filter)
+  const groups = groupByDate(filtered)
 
   return (
     <main className="flex-1 overflow-y-auto">
@@ -56,17 +85,22 @@ export default function HistoryScreen({ onSelectInterview }) {
 
         {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
 
-        <div className="space-y-3">
-          {!loading && filtered.length === 0 && <p className="text-sm text-gray-500">Nothing here yet.</p>}
-          {filtered.map((interview) => (
-            <InterviewCard
-              key={interview.id}
-              interview={interview}
-              onClick={() => onSelectInterview(interview)}
-              onDelete={() => handleDelete(interview)}
-            />
-          ))}
-        </div>
+        {!loading && filtered.length === 0 && <p className="text-sm text-gray-500">Nothing here yet.</p>}
+        {groups.map((group) => (
+          <div key={group.label} className="mb-6">
+            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">{group.label}</h2>
+            <div className="space-y-3">
+              {group.items.map((interview) => (
+                <InterviewCard
+                  key={interview.id}
+                  interview={interview}
+                  onClick={() => onSelectInterview(interview)}
+                  onDelete={() => handleDelete(interview)}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     </main>
   )

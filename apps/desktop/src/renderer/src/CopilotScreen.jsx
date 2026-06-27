@@ -1,10 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
-import { Send } from 'lucide-react'
+import { Send, Mic, Volume2 } from 'lucide-react'
 
-function renderMarkdown(text) {
-  return DOMPurify.sanitize(marked.parse(text || '', { breaks: true }))
+const DEVICES = [
+  { key: 'mic', label: 'Mic', icon: Mic },
+  { key: 'speaker', label: 'Speaker', icon: Volume2 }
+]
+
+const QUESTION_STYLE = {
+  backgroundColor: 'var(--style-question-bg, #7c3aed)',
+  color: 'var(--style-question-font, #ffffff)',
+  fontSize: 'var(--style-question-font-size, 14px)'
+}
+const ANSWER_STYLE = {
+  backgroundColor: 'var(--style-answer-bg, #f9fafb)',
+  color: 'var(--style-answer-font, #111827)',
+  fontSize: 'var(--style-answer-font-size, 14px)'
 }
 
 function formatTiming(timing) {
@@ -13,80 +23,36 @@ function formatTiming(timing) {
   return `${startedClock} · ${firstChunk}done in ${(timing.duration_ms / 1000).toFixed(2)}s`
 }
 
-export default function CopilotScreen({ interview }) {
-  const [history, setHistory] = useState([]) // completed exchanges, newest first
-  const [streaming, setStreaming] = useState(null) // { question, html } | null
+// history/streaming/error are lifted to InterviewWorkspace.jsx so a voice-triggered
+// question lands in the same conversation as a typed one. Mic/Speaker are alternative ways
+// to ask the same Copilot - both ask AI and get an answer here - so their controls live
+// in this tab. The combined "Both" mode (Job Mode) is a different interaction entirely
+// (passive listening + comparison feedback) and lives in its own tab.
+export default function CopilotScreen({
+  history,
+  streaming,
+  error,
+  onSubmit,
+  listenMode,
+  speakerLevel,
+  speakerTranscript,
+  listenError,
+  onStartListening,
+  onStopListening
+}) {
   const [input, setInput] = useState('')
-  const [error, setError] = useState('')
-  const rawTextRef = useRef('')
-  const pendingRenderRef = useRef(false)
   const conversationRef = useRef(null)
-
-  useEffect(() => {
-    // Re-parsing the *entire* accumulated markdown on every single chunk gets
-    // progressively more expensive as the answer grows (a long answer can be 100+
-    // chunks), and visibly lags behind the server's actual chunk-arrival rate by the
-    // end of a long response even though the network/IPC side is fast. Throttling the
-    // expensive parse+sanitize to once per animation frame - while still accumulating
-    // every chunk's text immediately and cheaply - keeps rendering visually real-time
-    // regardless of answer length, since 60fps updates read as instant to the eye.
-    function flushRender() {
-      pendingRenderRef.current = false
-      setStreaming((s) => (s ? { ...s, html: renderMarkdown(rawTextRef.current) } : s))
-    }
-
-    window.clearpilot.onChatEvent((event) => {
-      if (event.type === 'chunk') {
-        rawTextRef.current += event.text
-        if (!pendingRenderRef.current) {
-          pendingRenderRef.current = true
-          requestAnimationFrame(flushRender)
-        }
-      } else if (event.type === 'error') {
-        setError(event.detail || 'Something went wrong')
-        setStreaming(null)
-      } else if (event.type === 'done') {
-        // Compute directly from rawTextRef rather than trusting the last rendered
-        // `s.html` - a throttled frame may still be pending when `done` arrives.
-        const finalHtml = renderMarkdown(rawTextRef.current)
-        setStreaming((s) => {
-          if (s) {
-            setHistory((h) => [
-              {
-                question: s.question,
-                html: finalHtml,
-                sources: event.sources,
-                badge: event.from_qa_bank ? 'From your Q&A' : null,
-                timing: event
-              },
-              ...h
-            ])
-          }
-          return null
-        })
-      }
-    })
-    return () => window.clearpilot.offChatEvent()
-  }, [])
 
   useEffect(() => {
     conversationRef.current?.scrollTo({ top: 0 })
   }, [streaming, history])
 
-  async function handleSubmit(e) {
+  function handleSubmit(e) {
     e.preventDefault()
     const question = input.trim()
-    if (!question || streaming) return
+    if (!question) return
     setInput('')
-    setError('')
-    rawTextRef.current = ''
-    setStreaming({ question, html: '' })
-
-    const res = await window.clearpilot.askQuestion(interview.id, question)
-    if (!res.success) {
-      setError(res.error || 'Could not reach ClearPilot')
-      setStreaming(null)
-    }
+    onSubmit(question)
   }
 
   return (
@@ -95,12 +61,13 @@ export default function CopilotScreen({ interview }) {
         {streaming && (
           <div className="space-y-3 pb-5 border-b border-gray-100">
             <div className="flex justify-end">
-              <div className="bg-purple-600 text-white rounded-2xl rounded-br-md px-4 py-2.5 max-w-[80%] text-sm">
+              <div className="rounded-2xl rounded-br-md px-4 py-2.5 max-w-[80%]" style={QUESTION_STYLE}>
                 {streaming.question}
               </div>
             </div>
             <div
-              className="bg-gray-50 border border-gray-100 rounded-2xl rounded-bl-md px-4 py-3 max-w-[85%] text-sm answer-text"
+              className="border border-gray-100 rounded-2xl rounded-bl-md px-4 py-3 max-w-[85%] answer-text"
+              style={ANSWER_STYLE}
               dangerouslySetInnerHTML={{ __html: streaming.html }}
             />
           </div>
@@ -115,14 +82,15 @@ export default function CopilotScreen({ interview }) {
         {history.map((exchange, i) => (
           <div key={i} className="space-y-3 pb-5 border-b border-gray-100 last:border-0">
             <div className="flex justify-end">
-              <div className="bg-purple-600 text-white rounded-2xl rounded-br-md px-4 py-2.5 max-w-[80%] text-sm">
+              <div className="rounded-2xl rounded-br-md px-4 py-2.5 max-w-[80%]" style={QUESTION_STYLE}>
                 {exchange.question}
               </div>
             </div>
             <div className="flex flex-col items-start gap-1">
               {exchange.badge && <span className="text-xs text-purple-600 pl-1">{exchange.badge}</span>}
               <div
-                className="bg-gray-50 border border-gray-100 rounded-2xl rounded-bl-md px-4 py-3 max-w-[85%] text-sm answer-text"
+                className="border border-gray-100 rounded-2xl rounded-bl-md px-4 py-3 max-w-[85%] answer-text"
+                style={ANSWER_STYLE}
                 dangerouslySetInnerHTML={{ __html: exchange.html }}
               />
             </div>
@@ -140,8 +108,45 @@ export default function CopilotScreen({ interview }) {
         ))}
       </div>
 
-      <div className="border-t border-gray-200 px-8 py-4 shrink-0">
-        {error && <p className="text-xs text-red-600 mb-2">{error}</p>}
+      <div className="border-t border-gray-200 px-8 py-4 shrink-0 space-y-2">
+        <div className="flex items-center gap-2">
+          {DEVICES.map((device) => {
+            const available = device.key === 'speaker'
+            const active = listenMode === device.key
+            const Icon = device.icon
+            return (
+              <button
+                key={device.key}
+                type="button"
+                disabled={!available}
+                onClick={() => (active ? onStopListening() : onStartListening(device.key))}
+                title={available ? `${active ? 'Stop' : 'Start'} ${device.label} listening` : `${device.label} - coming soon`}
+                className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border ${
+                  !available
+                    ? 'opacity-50 cursor-not-allowed border-gray-200 text-gray-400'
+                    : active
+                      ? 'border-purple-500 bg-purple-50 text-purple-700'
+                      : 'border-gray-200 text-gray-500 hover:border-purple-300'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {device.label}
+              </button>
+            )
+          })}
+          {listenMode === 'speaker' && (
+            <div className="flex-1 flex items-center gap-2 min-w-0">
+              <div className="w-12 h-1 bg-gray-100 rounded-full overflow-hidden shrink-0">
+                <div className="h-full bg-purple-500" style={{ width: `${Math.min(100, speakerLevel)}%` }} />
+              </div>
+              <span className="text-xs text-gray-400 truncate">
+                {speakerTranscript || 'Listening for the interviewer’s question...'}
+              </span>
+            </div>
+          )}
+        </div>
+        {listenError && <p className="text-xs text-red-600">{listenError}</p>}
+        {error && <p className="text-xs text-red-600">{error}</p>}
         <form onSubmit={handleSubmit} className="flex items-end gap-2">
           <input
             value={input}

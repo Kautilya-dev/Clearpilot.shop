@@ -233,6 +233,16 @@ async function deleteQa(token, interviewId, entryId) {
   if (!res.ok) throw new Error(await parseErrorDetail(res))
 }
 
+async function mintRealtimeToken(token, interviewId, source) {
+  const res = await fetch(`${BASE_URL}/api/interviews/${interviewId}/realtime-token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ source })
+  })
+  if (!res.ok) throw new Error(await parseErrorDetail(res))
+  return res.json() // { client_secret, expires_at, model }
+}
+
 // Streams an answer from /chat/ask, calling onEvent(parsedEvent) once per SSE frame
 // ({type:"start"|"chunk"|"error"|"done", ...}) as it arrives. Ported from the exact
 // buffering/parsing algorithm in apps/web/pages/interview.html's submitQuestion() - fetch
@@ -290,5 +300,6 @@ module.exports = {
   createQa,
   uploadQa,
   updateQa,
-  deleteQa
+  deleteQa,
+  mintRealtimeToken
 }

@@ -4,6 +4,7 @@ import InterviewWorkspace from './InterviewWorkspace'
 import PickerScreen from './PickerScreen'
 import HistoryScreen from './HistoryScreen'
 import SettingsScreen from './SettingsScreen'
+import { applyStyles } from './applyStyles'
 
 const NAV_ITEMS = [
   { key: 'picker', label: 'My Interviews' },
@@ -70,6 +71,12 @@ export default function App() {
       setError(message || 'Sign-in failed')
     })
     return () => window.clearpilot.offAuthEvents()
+  }, [])
+
+  useEffect(() => {
+    window.clearpilot.getSettings().then((res) => {
+      if (res.success) applyStyles(res.settings.styles)
+    })
   }, [])
 
   function handleSignIn() {

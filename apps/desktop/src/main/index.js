@@ -1,13 +1,22 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, shell, session, desktopCapturer } = require('electron')
 const http = require('http')
 const path = require('path')
 const StealthManager = require('../modules/stealthManager')
 const authStore = require('./auth-store')
 const apiClient = require('./api-client')
+const settingsStore = require('./settings-store')
+const RealtimeSessionManager = require('./realtimeSessionManager')
 
 let mainWindow = null
 let stealth = null
 let callbackServer = null
+
+// One RealtimeSessionManager per device, started/stopped independently via the
+// listening:* IPC handlers below. Both can be active simultaneously (Judge mode).
+let speakerSession = null
+let micSession = null
+let speakerStopIntentional = false
+let micStopIntentional = false
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -23,11 +32,33 @@ function createWindow() {
 
   stealth = new StealthManager(mainWindow, null)
 
+  // Re-apply last session's window/behavior preferences - settings.json persists across
+  // launches, but BrowserWindow options above don't read from it directly.
+  const settings = settingsStore.getAll()
+  mainWindow.setOpacity(settings.window.opacity)
+  mainWindow.setAlwaysOnTop(settings.window.alwaysOnTop)
+  if (settings.behavior.stealthMode) stealth.toggleStealth(true)
+
   if (process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
+
+  // System/speaker audio loopback capture - getDisplayMedia always requires a video
+  // constraint even when only audio is wanted, so the renderer requests a throwaway 1x1
+  // video track alongside it; this just fulfills that request with real screen + loopback.
+  session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+    desktopCapturer
+      .getSources({ types: ['screen'] })
+      .then((sources) => callback({ video: sources[0], audio: 'loopback' }))
+      .catch(() => callback({}))
+  })
+
+  // Mic capture (getUserMedia) is permission-gated separately from display media.
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    callback(['microphone', 'media', 'audioCapture'].includes(permission))
+  })
 }
 
 function closeCallbackServer() {
@@ -379,6 +410,85 @@ function registerIpcHandlers() {
   ipcMain.handle('stealth:getStatus', async () => {
     if (!stealth) return { success: false, error: 'Stealth not initialized' }
     return stealth.getStatus()
+  })
+
+  ipcMain.handle('settings:get', async () => {
+    return { success: true, settings: settingsStore.getAll() }
+  })
+
+  // A single entry point for all persisted preferences - window.opacity/alwaysOnTop are
+  // also applied live to the real window here, since settings.json alone doesn't affect
+  // the already-open BrowserWindow. behavior.stealthMode is persisted only; the renderer
+  // calls stealth:toggle separately for the actual OS-level effect (kept as two calls so
+  // this handler doesn't need to know about StealthManager's own success/error shape).
+  ipcMain.handle('settings:save', async (event, updates) => {
+    const settings = settingsStore.save(updates)
+    if (updates.window?.opacity !== undefined) mainWindow?.setOpacity(updates.window.opacity)
+    if (updates.window?.alwaysOnTop !== undefined) mainWindow?.setAlwaysOnTop(updates.window.alwaysOnTop)
+    return { success: true, settings }
+  })
+
+  // source is 'speaker' or 'mic' - same handlers manage both independent sessions, so
+  // Judge mode (both running together) needs no separate IPC wiring beyond this.
+  async function startListeningSession(interviewId, source, isRetry = false) {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      const { client_secret } = await apiClient.mintRealtimeToken(token, interviewId, source)
+      const manager = new RealtimeSessionManager(client_secret)
+      manager.setTranscriptCallback((text) => {
+        mainWindow?.webContents.send('listening:transcript', { source, text })
+      })
+      manager.setErrorCallback(async (error) => {
+        const wasIntentional = source === 'speaker' ? speakerStopIntentional : micStopIntentional
+        if (wasIntentional || isRetry) {
+          mainWindow?.webContents.send('listening:error', { source, message: error.message })
+          return
+        }
+        // One silent reconnect attempt (fresh token - the old one may have expired)
+        // before surfacing anything to the user.
+        const retryResult = await startListeningSession(interviewId, source, true)
+        if (!retryResult.success) {
+          mainWindow?.webContents.send('listening:error', { source, message: error.message })
+        }
+      })
+      // Same instructions regardless of source - both sessions only ever transcribe,
+      // never generate a response, so there's no behavioral difference to prompt for.
+      await manager.connect('You are a silent transcription assistant. Transcribe the audio you hear into English text only.')
+      if (source === 'speaker') {
+        speakerSession = manager
+        speakerStopIntentional = false
+      } else {
+        micSession = manager
+        micStopIntentional = false
+      }
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  ipcMain.handle('listening:start', async (event, { interviewId, source }) => {
+    return startListeningSession(interviewId, source)
+  })
+
+  ipcMain.handle('listening:stop', async (event, { source }) => {
+    if (source === 'speaker') {
+      speakerStopIntentional = true
+      speakerSession?.disconnect()
+      speakerSession = null
+    } else {
+      micStopIntentional = true
+      micSession?.disconnect()
+      micSession = null
+    }
+    return { success: true }
+  })
+
+  ipcMain.handle('listening:audioChunk', async (event, { source, base64Data }) => {
+    const targetSession = source === 'speaker' ? speakerSession : micSession
+    if (!targetSession) return { success: false, message: 'No active session' }
+    return targetSession.sendAudioChunk(Buffer.from(base64Data, 'base64'))
   })
 }
 

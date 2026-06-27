@@ -41,6 +41,23 @@ contextBridge.exposeInMainWorld('clearpilot', {
   toggleStealth: (enabled) => ipcRenderer.invoke('stealth:toggle', enabled),
   getStealthStatus: () => ipcRenderer.invoke('stealth:getStatus'),
 
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  saveSettings: (updates) => ipcRenderer.invoke('settings:save', updates),
+
+  startListening: (interviewId, source) => ipcRenderer.invoke('listening:start', { interviewId, source }),
+  stopListening: (source) => ipcRenderer.invoke('listening:stop', { source }),
+  sendAudioChunk: (source, base64Data) => ipcRenderer.invoke('listening:audioChunk', { source, base64Data }),
+  onListeningTranscript: (callback) => {
+    ipcRenderer.on('listening:transcript', (event, data) => callback(data))
+  },
+  onListeningError: (callback) => {
+    ipcRenderer.on('listening:error', (event, data) => callback(data))
+  },
+  offListeningEvents: () => {
+    ipcRenderer.removeAllListeners('listening:transcript')
+    ipcRenderer.removeAllListeners('listening:error')
+  },
+
   listMaterials: (interviewId) => ipcRenderer.invoke('materials:list', { interviewId }),
   createMaterial: (interviewId, type, name, text) =>
     ipcRenderer.invoke('materials:create', { interviewId, type, name, text }),
