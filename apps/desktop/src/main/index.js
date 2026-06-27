@@ -134,6 +134,24 @@ function registerIpcHandlers() {
     }
   })
 
+  // ipcMain.handle is request/response, not streaming - this returns immediately once the
+  // request is kicked off, and the actual answer arrives via repeated 'chat:event' sends
+  // as each SSE frame from /chat/ask is parsed (see api-client.js's askQuestion).
+  ipcMain.handle('chat:ask', async (event, { interviewId, question }) => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+
+    apiClient
+      .askQuestion(token, interviewId, question, (chatEvent) => {
+        mainWindow?.webContents.send('chat:event', chatEvent)
+      })
+      .catch((error) => {
+        mainWindow?.webContents.send('chat:event', { type: 'error', detail: error.message })
+      })
+
+    return { success: true }
+  })
+
   ipcMain.handle('stealth:toggle', async (event, enabled) => {
     if (!stealth) return { success: false, error: 'Stealth not initialized' }
     return await stealth.toggleStealth(enabled)

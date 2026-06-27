@@ -486,6 +486,16 @@
     let answerEl = null;
     let badgeEl = null;
     let rawAnswerText = '';
+    let renderScheduled = false;
+
+    function scheduleRender() {
+      if (renderScheduled) return;
+      renderScheduled = true;
+      requestAnimationFrame(() => {
+        renderScheduled = false;
+        if (answerEl) answerEl.innerHTML = renderMarkdown(rawAnswerText);
+      });
+    }
 
     try {
       const res = await fetch(`/api/interviews/${interviewId}/chat/ask`, {
@@ -526,12 +536,13 @@
           } else if (event.type === 'chunk') {
             if (answerEl) {
               rawAnswerText += event.text;
-              answerEl.innerHTML = renderMarkdown(rawAnswerText);
+              scheduleRender();
             }
           } else if (event.type === 'error') {
             errorBox.textContent = event.detail || 'Something went wrong.';
             errorBox.classList.remove('hidden');
           } else if (event.type === 'done') {
+            if (answerEl) answerEl.innerHTML = renderMarkdown(rawAnswerText);
             if (event.from_qa_bank && badgeEl) {
               badgeEl.textContent = 'From your Q&A';
               badgeEl.classList.remove('hidden');

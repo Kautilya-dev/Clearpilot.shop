@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Compass, LogOut } from 'lucide-react'
+import CopilotScreen from './CopilotScreen'
 
 const STATE_STYLES = {
   active: 'bg-purple-50 text-purple-700',
@@ -124,20 +125,10 @@ export default function App() {
       <Sidebar user={user} onLogout={handleLogout} />
 
       {screen === 'workspace' && selectedInterview ? (
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="border-b border-gray-200 px-8 py-4 shrink-0">
-            <button
-              onClick={() => { setSelectedInterview(null); setScreen('picker') }}
-              className="text-xs text-gray-400 hover:text-gray-600 inline-flex items-center gap-1 mb-2"
-            >
-              &larr; All interviews
-            </button>
-            <h1 className="text-xl font-semibold tracking-tight">{selectedInterview.title}</h1>
-          </div>
-          <div className="flex-1 flex items-center justify-center">
-            <p className="text-sm text-gray-400">Copilot view coming in the next step.</p>
-          </div>
-        </div>
+        <CopilotScreen
+          interview={selectedInterview}
+          onBack={() => { setSelectedInterview(null); setScreen('picker') }}
+        />
       ) : (
         <main className="flex-1 overflow-y-auto">
           <div className="max-w-3xl mx-auto px-8 py-10">

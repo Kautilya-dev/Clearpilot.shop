@@ -17,6 +17,14 @@ contextBridge.exposeInMainWorld('clearpilot', {
 
   listInterviews: () => ipcRenderer.invoke('interviews:list'),
 
+  askQuestion: (interviewId, question) => ipcRenderer.invoke('chat:ask', { interviewId, question }),
+  onChatEvent: (callback) => {
+    ipcRenderer.on('chat:event', (event, data) => callback(data))
+  },
+  offChatEvent: () => {
+    ipcRenderer.removeAllListeners('chat:event')
+  },
+
   toggleStealth: (enabled) => ipcRenderer.invoke('stealth:toggle', enabled),
   getStealthStatus: () => ipcRenderer.invoke('stealth:getStatus')
 })
