@@ -7,7 +7,7 @@ const WebSocket = require('ws')
 // equivalent server-side (qa_match_service.py + qa_judge_service.py via /chat/ask) - a
 // transcribed question is just fed into that existing pipeline by the caller, so every
 // answer-generation/local-matching concern from the original is intentionally dropped here.
-const REALTIME_MODEL = 'gpt-4o-realtime-preview'
+const REALTIME_MODEL = 'gpt-realtime-2'
 const REALTIME_URL = `wss://api.openai.com/v1/realtime?model=${REALTIME_MODEL}`
 
 class RealtimeSessionManager {
