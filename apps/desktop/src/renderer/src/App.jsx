@@ -1,10 +1,34 @@
 import { useEffect, useState } from 'react'
-import { Compass, LogOut } from 'lucide-react'
+import { Compass, LogOut, X } from 'lucide-react'
 import InterviewWorkspace from './InterviewWorkspace'
 import PickerScreen from './PickerScreen'
 import HistoryScreen from './HistoryScreen'
 import SettingsScreen from './SettingsScreen'
 import { applyStyles } from './applyStyles'
+
+// Thin draggable strip replacing the OS title bar (window is frameless).
+// Only a close button — no minimize, no maximize. This is intentional and permanent.
+function TitleBar() {
+  return (
+    <div
+      className="h-8 shrink-0 flex items-center justify-between px-4 bg-white border-b border-gray-100 select-none"
+      style={{ WebkitAppRegion: 'drag' }}
+    >
+      <span className="text-xs text-gray-400 flex items-center gap-1.5">
+        <Compass className="w-3 h-3 text-purple-500" />
+        ClearPilot
+      </span>
+      <button
+        onClick={() => window.clearpilot.closeWindow()}
+        title="Close"
+        style={{ WebkitAppRegion: 'no-drag' }}
+        className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+      >
+        <X className="w-3 h-3" />
+      </button>
+    </div>
+  )
+}
 
 const NAV_ITEMS = [
   { key: 'picker', label: 'My Interviews' },
@@ -104,57 +128,66 @@ export default function App() {
 
   if (screen === 'loading') {
     return (
-      <div className="h-screen flex items-center justify-center bg-white">
-        <p className="text-gray-400 text-sm">Loading...</p>
+      <div className="h-screen flex flex-col overflow-hidden font-sans">
+        <TitleBar />
+        <div className="flex-1 flex items-center justify-center bg-white">
+          <p className="text-gray-400 text-sm">Loading...</p>
+        </div>
       </div>
     )
   }
 
   if (screen === 'login') {
     return (
-      <div className="h-screen flex items-center justify-center bg-white font-sans">
-        <div className="w-80 text-center">
-          <h1 className="text-lg font-semibold mb-2 flex items-center justify-center gap-2">
-            <Compass className="text-purple-600 w-5 h-5" />ClearPilot
-          </h1>
-          <p className="text-sm text-gray-500 mb-5">Sign in with your ClearPilot account to continue.</p>
-          {error && <p className="text-xs text-red-600 mb-3">{error}</p>}
-          <button
-            onClick={handleSignIn}
-            disabled={waiting}
-            className="w-full bg-purple-600 text-white rounded-lg px-3 py-2.5 text-sm disabled:opacity-60"
-          >
-            {waiting ? 'Waiting for browser sign-in...' : 'Sign in with Browser'}
-          </button>
-          {waiting && (
-            <p className="text-xs text-gray-400 mt-3">
-              Complete sign-in in the browser window that just opened, then come back here.
-            </p>
-          )}
+      <div className="h-screen flex flex-col overflow-hidden font-sans">
+        <TitleBar />
+        <div className="flex-1 flex items-center justify-center bg-white">
+          <div className="w-80 text-center">
+            <h1 className="text-lg font-semibold mb-2 flex items-center justify-center gap-2">
+              <Compass className="text-purple-600 w-5 h-5" />ClearPilot
+            </h1>
+            <p className="text-sm text-gray-500 mb-5">Sign in with your ClearPilot account to continue.</p>
+            {error && <p className="text-xs text-red-600 mb-3">{error}</p>}
+            <button
+              onClick={handleSignIn}
+              disabled={waiting}
+              className="w-full bg-purple-600 text-white rounded-lg px-3 py-2.5 text-sm disabled:opacity-60"
+            >
+              {waiting ? 'Waiting for browser sign-in...' : 'Sign in with Browser'}
+            </button>
+            {waiting && (
+              <p className="text-xs text-gray-400 mt-3">
+                Complete sign-in in the browser window that just opened, then come back here.
+              </p>
+            )}
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="h-screen flex overflow-hidden font-sans">
-      <Sidebar user={user} activeScreen={screen} onNavigate={handleNavigate} onLogout={handleLogout} />
+    <div className="h-screen flex flex-col overflow-hidden font-sans">
+      <TitleBar />
+      <div className="flex-1 flex overflow-hidden">
+        <Sidebar user={user} activeScreen={screen} onNavigate={handleNavigate} onLogout={handleLogout} />
 
-      {screen === 'workspace' && selectedInterview && (
-        <InterviewWorkspace interview={selectedInterview} onBack={() => handleNavigate('picker')} />
-      )}
-      {screen === 'picker' && <PickerScreen onSelectInterview={handleSelectInterview} />}
-      {screen === 'history' && <HistoryScreen onSelectInterview={handleSelectInterview} />}
-      {screen === 'settings' && (
-        <SettingsScreen
-          user={user}
-          onProfileUpdated={setUser}
-          onAccountDeleted={() => {
-            setUser(null)
-            setScreen('login')
-          }}
-        />
-      )}
+        {screen === 'workspace' && selectedInterview && (
+          <InterviewWorkspace interview={selectedInterview} onBack={() => handleNavigate('picker')} />
+        )}
+        {screen === 'picker' && <PickerScreen onSelectInterview={handleSelectInterview} />}
+        {screen === 'history' && <HistoryScreen onSelectInterview={handleSelectInterview} />}
+        {screen === 'settings' && (
+          <SettingsScreen
+            user={user}
+            onProfileUpdated={setUser}
+            onAccountDeleted={() => {
+              setUser(null)
+              setScreen('login')
+            }}
+          />
+        )}
+      </div>
     </div>
   )
 }

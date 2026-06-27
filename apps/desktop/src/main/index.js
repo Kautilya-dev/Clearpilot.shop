@@ -22,6 +22,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1000,
     height: 720,
+    frame: false,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -125,6 +126,10 @@ function startBrowserSignIn() {
 }
 
 function registerIpcHandlers() {
+  ipcMain.handle('window:close', () => {
+    mainWindow?.close()
+  })
+
   ipcMain.handle('auth:openBrowserSignIn', () => {
     startBrowserSignIn()
   })
