@@ -16,7 +16,7 @@ function OpenAITab() {
   const [show, setShow] = useState(false)
 
   useEffect(() => {
-    window.clearpilot.getSettings().then((s) => setApiKey(s.openai?.apiKey || ''))
+    window.clearpilot.getSettings().then((res) => setApiKey(res.settings?.openai?.apiKey || ''))
   }, [])
 
   async function handleSave() {

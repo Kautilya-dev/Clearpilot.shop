@@ -62,7 +62,7 @@ function save(updates) {
     openai: { ...current.openai, ...updates.openai },
     styles: { ...current.styles, ...updates.styles }
   }
-  fs.writeFileSync(settingsFilePath(), JSON.stringify(cached, null, 2))
+  fs.writeFileSync(settingsFilePath(), JSON.stringify(cached, null, 2), 'utf-8')
   return cached
 }
 

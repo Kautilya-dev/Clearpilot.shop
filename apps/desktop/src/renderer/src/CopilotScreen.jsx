@@ -30,6 +30,7 @@ function formatTiming(timing) {
 // (passive listening + comparison feedback) and lives in its own tab.
 export default function CopilotScreen({
   history,
+  historyLoading,
   streaming,
   error,
   onSubmit,
@@ -76,7 +77,10 @@ export default function CopilotScreen({
           </div>
         )}
 
-        {history.length === 0 && !streaming && (
+        {historyLoading && (
+          <p className="text-sm text-gray-400 text-center py-16">Loading conversation…</p>
+        )}
+        {!historyLoading && history.length === 0 && !streaming && (
           <p className="text-sm text-gray-400 text-center py-16">
             Ask anything grounded in this interview&apos;s materials and Q&amp;A.
           </p>

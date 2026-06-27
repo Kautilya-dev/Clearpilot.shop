@@ -27,6 +27,7 @@ export default function InterviewWorkspace({ interview, onBack }) {
   const [activeTab, setActiveTab] = useState('copilot')
 
   const [history, setHistory] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(true)
   const [streaming, setStreaming] = useState(null)
   const [chatError, setChatError] = useState('')
   const rawTextRef = useRef('')
@@ -44,6 +45,27 @@ export default function InterviewWorkspace({ interview, onBack }) {
   const jobCurrentRef = useRef({ question: '', suggestion: '', response: '' })
   const [jobCurrent, setJobCurrent] = useState({ question: '', suggestion: '', response: '', feedback: '' })
   const [jobRounds, setJobRounds] = useState([])
+
+  // Load past conversation when entering the workspace so the user can continue
+  // exactly where they left off. Entries arrive newest-first from the API.
+  useEffect(() => {
+    window.clearpilot.getHistory(interview.id, 100).then((res) => {
+      if (res.success && res.entries?.length) {
+        setHistory(
+          res.entries.map((entry) => ({
+            question: entry.question,
+            html: renderMarkdown(entry.answer || ''),
+            sources: entry.sources || [],
+            badge: entry.from_qa_bank ? 'From your Q&A' : null,
+            timing: entry.started_at
+              ? { started_at: entry.started_at, time_to_first_chunk_ms: entry.time_to_first_chunk_ms, duration_ms: entry.duration_ms }
+              : null
+          }))
+        )
+      }
+      setHistoryLoading(false)
+    })
+  }, [interview.id])
 
   useEffect(() => {
     function flushRender() {
@@ -249,6 +271,7 @@ export default function InterviewWorkspace({ interview, onBack }) {
       <div className={activeTab === 'copilot' ? 'contents' : 'hidden'}>
         <CopilotScreen
           history={history}
+          historyLoading={historyLoading}
           streaming={streaming}
           error={chatError}
           onSubmit={submitQuestion}
