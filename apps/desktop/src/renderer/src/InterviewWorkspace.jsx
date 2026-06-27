@@ -120,11 +120,9 @@ export default function InterviewWorkspace({ interview, onBack }) {
     }
     const res = await window.clearpilot.startListening(interview.id, source)
     if (!res.success) {
+      // Keep mode set so the device name stays visible even if the WS session fails.
+      // The error is shown below the buttons; the user can stop manually.
       setListenError(res.error)
-      if (source === 'speaker') {
-        audioCapture.stopSpeakerCapture()
-        setListenMode('off')
-      }
     }
   }
 
