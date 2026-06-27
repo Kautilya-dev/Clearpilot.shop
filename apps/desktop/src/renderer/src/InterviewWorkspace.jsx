@@ -34,9 +34,16 @@ export default function InterviewWorkspace({ interview, onBack }) {
   const isBusyRef = useRef(false) // mirrors "streaming !== null" without closure-staleness risk
 
   const audioCapture = useAudioCapture()
-  const [listenMode, setListenMode] = useState('off') // 'off' | 'speaker' (mic/both arrive in later phases)
+  // listenModeRef mirrors listenMode without closure-staleness in IPC callbacks
+  const listenModeRef = useRef('off')
+  const [listenMode, setListenMode] = useState('off') // 'off' | 'speaker' | 'mic' | 'both'
   const [speakerTranscript, setSpeakerTranscript] = useState('')
   const [listenError, setListenError] = useState('')
+
+  // Job Mode round state — each round: { question, suggestion, response, feedback }
+  const jobCurrentRef = useRef({ question: '', suggestion: '', response: '' })
+  const [jobCurrent, setJobCurrent] = useState({ question: '', suggestion: '', response: '', feedback: '' })
+  const [jobRounds, setJobRounds] = useState([])
 
   useEffect(() => {
     function flushRender() {
@@ -81,28 +88,60 @@ export default function InterviewWorkspace({ interview, onBack }) {
   const speakerTranscriptRef = useRef('')
 
   useEffect(() => {
-    // Transcript of what was heard → show in question bubble while GPT processes
-    window.clearpilot.onListeningQuestion(({ text }) => {
-      speakerTranscriptRef.current = text
-      setSpeakerTranscript(text)
+    window.clearpilot.onListeningQuestion(({ source, text }) => {
+      if (source === 'speaker') {
+        speakerTranscriptRef.current = text
+        setSpeakerTranscript(text)
+        if (listenModeRef.current === 'both') {
+          jobCurrentRef.current.question = text
+          setJobCurrent((c) => ({ ...c, question: text }))
+        }
+      } else if (source === 'mic' && listenModeRef.current === 'both') {
+        // What the candidate actually said in Job Mode
+        jobCurrentRef.current.response = text
+        setJobCurrent((c) => ({ ...c, response: text }))
+      }
     })
-    // GPT's text answer → push directly into history, using the transcript as the question label
+
     window.clearpilot.onListeningAnswer(({ source, text }) => {
-      const question = speakerTranscriptRef.current || (source === 'speaker' ? '🎤 Speaker' : '🎤 Mic')
-      speakerTranscriptRef.current = ''
-      setSpeakerTranscript('')
-      const html = renderMarkdown(text)
-      setHistory((h) => [
-        {
-          question,
-          html,
-          sources: [],
-          badge: '🎤 Live audio',
-          timing: null
-        },
-        ...h
-      ])
+      if (source === 'speaker') {
+        if (listenModeRef.current === 'both') {
+          // Job Mode: speaker GPT answer is the suggestion — don't push to copilot history
+          jobCurrentRef.current.suggestion = text
+          setJobCurrent((c) => ({ ...c, suggestion: text }))
+          speakerTranscriptRef.current = ''
+          setSpeakerTranscript('')
+        } else {
+          // Copilot mode: push speaker answer directly into conversation history
+          const question = speakerTranscriptRef.current || '🎤 Speaker'
+          speakerTranscriptRef.current = ''
+          setSpeakerTranscript('')
+          const html = renderMarkdown(text)
+          setHistory((h) => [{ question, html, sources: [], badge: '🎤 Live audio', timing: null }, ...h])
+        }
+      } else if (source === 'mic') {
+        if (listenModeRef.current === 'both') {
+          // Job Mode: mic GPT answer is the judge's feedback — finalize the round
+          const round = {
+            question: jobCurrentRef.current.question,
+            suggestion: jobCurrentRef.current.suggestion,
+            response: jobCurrentRef.current.response,
+            feedback: text
+          }
+          jobCurrentRef.current = { question: '', suggestion: '', response: '' }
+          setJobCurrent({ question: '', suggestion: '', response: '', feedback: '' })
+          setJobRounds((r) => [round, ...r])
+        } else {
+          // Copilot mode: push mic answer directly into conversation history
+          const question = speakerTranscriptRef.current || '🎤 Mic'
+          speakerTranscriptRef.current = ''
+          setSpeakerTranscript('')
+          const html = renderMarkdown(text)
+          setHistory((h) => [{ question, html, sources: [], badge: '🎤 Live audio', timing: null }, ...h])
+        }
+      }
     })
+
     window.clearpilot.onListeningError(({ message }) => setListenError(message))
     return () => window.clearpilot.offListeningEvents()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -126,37 +165,36 @@ export default function InterviewWorkspace({ interview, onBack }) {
 
   async function startListening(source) {
     setListenError('')
-    // Capture audio first so device name appears in the status strip immediately,
-    // independent of how long the WS session takes to connect.
+    // Capture audio first so device names appear immediately, independent of WS connect time.
     if (source === 'speaker') {
       const captureRes = await audioCapture.startSpeakerCapture()
-      if (!captureRes.success) {
-        setListenError(captureRes.message)
-        return
-      }
+      if (!captureRes.success) { setListenError(captureRes.message); return }
     } else if (source === 'mic') {
       const captureRes = await audioCapture.startMicCapture()
-      if (!captureRes.success) {
-        setListenError(captureRes.message)
-        return
-      }
+      if (!captureRes.success) { setListenError(captureRes.message); return }
+    } else if (source === 'both') {
+      const captureRes = await audioCapture.startBothCapture()
+      if (!captureRes.success) { setListenError(captureRes.message); return }
     }
+    listenModeRef.current = source
     setListenMode(source)
     const res = await window.clearpilot.startListening(interview.id, source)
-    if (!res.success) {
-      // Keep mode set so device name stays visible even if the WS session fails.
-      setListenError(res.error)
-    }
+    if (!res.success) setListenError(res.error)
   }
 
   async function stopListening() {
-    if (listenMode === 'speaker') {
+    const mode = listenModeRef.current
+    if (mode === 'speaker') {
       await window.clearpilot.stopListening('speaker')
       audioCapture.stopSpeakerCapture()
-    } else if (listenMode === 'mic') {
+    } else if (mode === 'mic') {
       await window.clearpilot.stopListening('mic')
       audioCapture.stopMicCapture()
+    } else if (mode === 'both') {
+      await window.clearpilot.stopListening('both')
+      audioCapture.stopBothCapture()
     }
+    listenModeRef.current = 'off'
     setListenMode('off')
     setSpeakerTranscript('')
   }
@@ -226,7 +264,18 @@ export default function InterviewWorkspace({ interview, onBack }) {
         />
       </div>
       <div className={activeTab === 'judge' ? 'contents' : 'hidden'}>
-        <JudgeTab listenMode={listenMode} listenError={listenError} onStartListening={startListening} onStopListening={stopListening} />
+        <JudgeTab
+          listenMode={listenMode}
+          listenError={listenError}
+          onStartListening={startListening}
+          onStopListening={stopListening}
+          speakerLevel={audioCapture.speakerLevel}
+          speakerDeviceName={audioCapture.speakerDeviceName}
+          micLevel={audioCapture.micLevel}
+          micDeviceName={audioCapture.micDeviceName}
+          jobCurrent={jobCurrent}
+          jobRounds={jobRounds}
+        />
       </div>
     </div>
   )

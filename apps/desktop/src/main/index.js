@@ -428,20 +428,43 @@ function registerIpcHandlers() {
     return { success: true, settings }
   })
 
-  // source is 'speaker' or 'mic' - same handlers manage both independent sessions, so
-  // Judge mode (both running together) needs no separate IPC wiring beyond this.
-  async function startListeningSession(interviewId, source, isRetry = false) {
+  // true when both sessions run together (Job Mode) — used to update mic instructions
+  // with the speaker's suggestion so the judge has context.
+  let isJobMode = false
+
+  const SAP_INSTRUCTIONS =
+    'You are an expert SAP CPI (Cloud Integration) interview assistant. ' +
+    "Listen to the interviewer's question and respond with a clear, concise, accurate answer. " +
+    'Focus on SAP Integration Suite, CPI iFlows, adapters, mappings, security, and best practices. ' +
+    'Keep answers under 5 sentences unless a detailed explanation is needed.'
+
+  const JUDGE_INITIAL_INSTRUCTIONS =
+    'You are an interview coach in Job Mode. Listen to what the candidate says. ' +
+    'When they finish speaking, give 2-3 sentences of feedback: what they said well and one specific thing to improve.'
+
+  function judgeInstructionsWithSuggestion(suggestion) {
+    return (
+      `You are an interview coach. The ideal answer to the interviewer's question was: "${suggestion}". ` +
+      "Now listen to what the candidate actually says. When they finish, give 2-3 sentences of feedback: " +
+      'what they said well compared to the ideal answer, and one specific thing to improve.'
+    )
+  }
+
+  async function startSingleSession(interviewId, source, instructions, isRetry = false) {
     const apiKey = settingsStore.getAll().openai?.apiKey
     if (!apiKey) return { success: false, error: 'OpenAI API key not set. Add it in Settings.' }
     try {
       const manager = new RealtimeSessionManager(apiKey)
-      // What the mic/speaker heard → question area in UI
       manager.setQuestionCallback((text) => {
         mainWindow?.webContents.send('listening:question', { source, text })
       })
-      // GPT's answer → answer area in UI (NOT sent to /chat/ask)
       manager.setAnswerCallback((text) => {
         mainWindow?.webContents.send('listening:answer', { source, text })
+        // Job Mode: when speaker GPT answers, inject that suggestion into the mic judge session
+        // so it has context when the candidate speaks.
+        if (isJobMode && source === 'speaker' && micSession) {
+          micSession.updateInstructions(judgeInstructionsWithSuggestion(text))
+        }
       })
       manager.setErrorCallback(async (error) => {
         const wasIntentional = source === 'speaker' ? speakerStopIntentional : micStopIntentional
@@ -450,18 +473,12 @@ function registerIpcHandlers() {
           return
         }
         // One silent reconnect on transient disconnect before surfacing error to UI.
-        const retryResult = await startListeningSession(interviewId, source, true)
+        const retryResult = await startSingleSession(interviewId, source, instructions, true)
         if (!retryResult.success) {
           mainWindow?.webContents.send('listening:error', { source, message: error.message })
         }
       })
-      // gpt-realtime-2 hears the interviewer's audio and answers directly in text.
-      await manager.connect(
-        'You are an expert SAP CPI (Cloud Integration) interview assistant. ' +
-        'Listen to the interviewer\'s question and respond with a clear, concise, accurate answer. ' +
-        'Focus on SAP Integration Suite, CPI iFlows, adapters, mappings, security, and best practices. ' +
-        'Keep answers under 5 sentences unless a detailed explanation is needed.'
-      )
+      await manager.connect(instructions)
       if (source === 'speaker') {
         speakerSession = manager
         speakerStopIntentional = false
@@ -475,20 +492,39 @@ function registerIpcHandlers() {
     }
   }
 
+  async function startListeningSession(interviewId, source) {
+    if (source === 'both') {
+      isJobMode = true
+      // Start both sessions concurrently — speaker as SAP assistant, mic as judge
+      const [sr, mr] = await Promise.all([
+        startSingleSession(interviewId, 'speaker', SAP_INSTRUCTIONS),
+        startSingleSession(interviewId, 'mic', JUDGE_INITIAL_INSTRUCTIONS)
+      ])
+      if (!sr.success) return sr
+      if (!mr.success) return mr
+      return { success: true }
+    }
+    isJobMode = false
+    const instructions = source === 'speaker' ? SAP_INSTRUCTIONS : JUDGE_INITIAL_INSTRUCTIONS
+    return startSingleSession(interviewId, source, instructions)
+  }
+
   ipcMain.handle('listening:start', async (event, { interviewId, source }) => {
     return startListeningSession(interviewId, source)
   })
 
   ipcMain.handle('listening:stop', async (event, { source }) => {
-    if (source === 'speaker') {
+    if (source === 'speaker' || source === 'both') {
       speakerStopIntentional = true
       speakerSession?.disconnect()
       speakerSession = null
-    } else {
+    }
+    if (source === 'mic' || source === 'both') {
       micStopIntentional = true
       micSession?.disconnect()
       micSession = null
     }
+    if (source === 'both') isJobMode = false
     return { success: true }
   })
 

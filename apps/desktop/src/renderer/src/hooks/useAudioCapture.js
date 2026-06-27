@@ -171,6 +171,18 @@ export function useAudioCapture() {
     setMicDeviceName(null)
   }, [])
 
+  const startBothCapture = useCallback(async () => {
+    const [sr, mr] = await Promise.all([startSpeakerCapture(), startMicCapture()])
+    if (!sr.success) return sr
+    if (!mr.success) return mr
+    return { success: true }
+  }, [startSpeakerCapture, startMicCapture])
+
+  const stopBothCapture = useCallback(() => {
+    stopSpeakerCapture()
+    stopMicCapture()
+  }, [stopSpeakerCapture, stopMicCapture])
+
   useEffect(() => {
     return () => {
       teardownStream(speakerRef)
@@ -189,6 +201,8 @@ export function useAudioCapture() {
     startSpeakerCapture,
     stopSpeakerCapture,
     startMicCapture,
-    stopMicCapture
+    stopMicCapture,
+    startBothCapture,
+    stopBothCapture
   }
 }

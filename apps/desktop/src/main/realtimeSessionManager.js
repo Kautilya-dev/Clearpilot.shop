@@ -190,6 +190,16 @@ class RealtimeSessionManager {
     }
   }
 
+  // Dynamically update session instructions mid-session (e.g. inject latest suggestion into judge prompt).
+  updateInstructions(instructions) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
+    try {
+      this.ws.send(JSON.stringify({ type: 'session.update', session: { instructions } }))
+    } catch (err) {
+      console.error('Failed to update instructions:', err)
+    }
+  }
+
   sendAudioChunk(buffer) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !buffer?.length) {
       return { success: false, message: 'No active OpenAI Realtime session' }
