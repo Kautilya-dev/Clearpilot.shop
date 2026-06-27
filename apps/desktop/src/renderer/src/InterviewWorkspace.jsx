@@ -127,19 +127,24 @@ export default function InterviewWorkspace({ interview, onBack }) {
   async function startListening(source) {
     setListenError('')
     // Capture audio first so device name appears in the status strip immediately,
-    // independent of how long token minting takes.
+    // independent of how long the WS session takes to connect.
     if (source === 'speaker') {
       const captureRes = await audioCapture.startSpeakerCapture()
       if (!captureRes.success) {
         setListenError(captureRes.message)
         return
       }
-      setListenMode(source)
+    } else if (source === 'mic') {
+      const captureRes = await audioCapture.startMicCapture()
+      if (!captureRes.success) {
+        setListenError(captureRes.message)
+        return
+      }
     }
+    setListenMode(source)
     const res = await window.clearpilot.startListening(interview.id, source)
     if (!res.success) {
-      // Keep mode set so the device name stays visible even if the WS session fails.
-      // The error is shown below the buttons; the user can stop manually.
+      // Keep mode set so device name stays visible even if the WS session fails.
       setListenError(res.error)
     }
   }
@@ -148,6 +153,9 @@ export default function InterviewWorkspace({ interview, onBack }) {
     if (listenMode === 'speaker') {
       await window.clearpilot.stopListening('speaker')
       audioCapture.stopSpeakerCapture()
+    } else if (listenMode === 'mic') {
+      await window.clearpilot.stopListening('mic')
+      audioCapture.stopMicCapture()
     }
     setListenMode('off')
     setSpeakerTranscript('')
@@ -156,7 +164,9 @@ export default function InterviewWorkspace({ interview, onBack }) {
   useEffect(() => {
     return () => {
       window.clearpilot.stopListening('speaker')
+      window.clearpilot.stopListening('mic')
       audioCapture.stopSpeakerCapture()
+      audioCapture.stopMicCapture()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -207,6 +217,8 @@ export default function InterviewWorkspace({ interview, onBack }) {
           listenMode={listenMode}
           speakerLevel={audioCapture.speakerLevel}
           speakerDeviceName={audioCapture.speakerDeviceName}
+          micLevel={audioCapture.micLevel}
+          micDeviceName={audioCapture.micDeviceName}
           speakerTranscript={speakerTranscript}
           listenError={listenError}
           onStartListening={startListening}

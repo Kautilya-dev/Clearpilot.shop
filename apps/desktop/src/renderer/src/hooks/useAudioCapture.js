@@ -73,9 +73,13 @@ export function useAudioCapture() {
   const [speakerCapturing, setSpeakerCapturing] = useState(false)
   const [speakerLevel, setSpeakerLevel] = useState(0)
   const [speakerDeviceName, setSpeakerDeviceName] = useState(null)
+  const [micCapturing, setMicCapturing] = useState(false)
+  const [micLevel, setMicLevel] = useState(0)
+  const [micDeviceName, setMicDeviceName] = useState(null)
   const [error, setError] = useState(null)
 
   const speakerRef = useRef(makeStreamState())
+  const micRef = useRef(makeStreamState())
 
   // getDisplayMedia always requires a video constraint even when only audio is wanted -
   // the 1x1/1fps track is a deliberately negligible throwaway, not a real video feed.
@@ -130,16 +134,61 @@ export function useAudioCapture() {
     setSpeakerDeviceName(null)
   }, [])
 
+  const startMicCapture = useCallback(async () => {
+    if (micRef.current.stream) return { success: true }
+    setError(null)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: SAMPLE_RATE,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      })
+      const audioContext = new AudioContext({ sampleRate: SAMPLE_RATE })
+      const processor = buildProcessor(stream, audioContext, setMicLevel, (base64) =>
+        window.clearpilot.sendAudioChunk('mic', base64)
+      )
+      micRef.current = { stream, audioContext, processor }
+      stream.getTracks().forEach((t) => t.addEventListener('ended', () => stopMicCapture()))
+      const deviceName = stream.getAudioTracks()[0]?.label || 'Microphone'
+      setMicDeviceName(deviceName)
+      setMicCapturing(true)
+      return { success: true }
+    } catch (e) {
+      setError(e.message)
+      return { success: false, message: e.message }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const stopMicCapture = useCallback(() => {
+    teardownStream(micRef)
+    setMicCapturing(false)
+    setMicLevel(0)
+    setMicDeviceName(null)
+  }, [])
+
   useEffect(() => {
-    return () => teardownStream(speakerRef)
+    return () => {
+      teardownStream(speakerRef)
+      teardownStream(micRef)
+    }
   }, [])
 
   return {
     speakerCapturing,
     speakerLevel,
     speakerDeviceName,
+    micCapturing,
+    micLevel,
+    micDeviceName,
     error,
     startSpeakerCapture,
-    stopSpeakerCapture
+    stopSpeakerCapture,
+    startMicCapture,
+    stopMicCapture
   }
 }

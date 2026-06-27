@@ -36,6 +36,8 @@ export default function CopilotScreen({
   listenMode,
   speakerLevel,
   speakerDeviceName,
+  micLevel,
+  micDeviceName,
   speakerTranscript,
   listenError,
   onStartListening,
@@ -112,9 +114,8 @@ export default function CopilotScreen({
       <div className="border-t border-gray-200 px-8 py-4 shrink-0 space-y-2">
         <div className="flex items-center gap-2">
           {DEVICES.map((device) => {
-            // Speaker is implemented; Mic is coming soon. When any device is active,
-            // the other is disabled — only one device can be selected at a time.
-            const implemented = device.key === 'speaker'
+            // Only one device active at a time in Copilot; Job Mode (both) is a separate tab.
+            const implemented = true
             const active = listenMode === device.key
             const blockedByOther = listenMode !== 'off' && !active
             const disabled = !implemented || blockedByOther
@@ -145,13 +146,19 @@ export default function CopilotScreen({
               </button>
             )
           })}
-          {listenMode === 'speaker' && (
+          {listenMode !== 'off' && (
             <div className="flex-1 flex items-center gap-2 min-w-0">
               <div className="w-12 h-1 bg-gray-100 rounded-full overflow-hidden shrink-0">
-                <div className="h-full bg-purple-500" style={{ width: `${Math.min(100, speakerLevel)}%` }} />
+                <div
+                  className="h-full bg-purple-500"
+                  style={{ width: `${Math.min(100, listenMode === 'speaker' ? speakerLevel : micLevel)}%` }}
+                />
               </div>
               <span className="text-xs text-gray-400 truncate">
-                {speakerTranscript || `Listening : ${speakerDeviceName || 'System Audio'}`}
+                {speakerTranscript ||
+                  (listenMode === 'speaker'
+                    ? `Listening : ${speakerDeviceName || 'System Audio'}`
+                    : `Listening : ${micDeviceName || 'Microphone'}`)}
               </span>
             </div>
           )}
