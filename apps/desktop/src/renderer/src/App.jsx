@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react'
 import { Compass, LogOut } from 'lucide-react'
-import CopilotScreen from './CopilotScreen'
+import InterviewWorkspace from './InterviewWorkspace'
+import PickerScreen from './PickerScreen'
+import HistoryScreen from './HistoryScreen'
+import SettingsScreen from './SettingsScreen'
 
-const STATE_STYLES = {
-  active: 'bg-purple-50 text-purple-700',
-  completed: 'bg-green-50 text-green-700',
-  archived: 'bg-gray-100 text-gray-500'
-}
+const NAV_ITEMS = [
+  { key: 'picker', label: 'My Interviews' },
+  { key: 'history', label: 'History' },
+  { key: 'settings', label: 'Settings' }
+]
 
-function Sidebar({ user, onLogout }) {
+function Sidebar({ user, activeScreen, onNavigate, onLogout }) {
   return (
     <aside className="w-56 shrink-0 border-r border-gray-200 flex flex-col bg-white">
       <div className="h-16 flex items-center px-5 border-b border-gray-200">
@@ -17,7 +20,15 @@ function Sidebar({ user, onLogout }) {
         </span>
       </div>
       <nav className="flex-1 px-3 py-4 space-y-1">
-        <button className="sidebar-link active">My Interviews</button>
+        {NAV_ITEMS.map((item) => (
+          <button
+            key={item.key}
+            onClick={() => onNavigate(item.key)}
+            className={`sidebar-link w-full text-left ${activeScreen === item.key ? 'active' : ''}`}
+          >
+            {item.label}
+          </button>
+        ))}
       </nav>
       <div className="px-3 py-3 border-t border-gray-200">
         <div className="flex items-center justify-between px-3 py-2">
@@ -32,12 +43,10 @@ function Sidebar({ user, onLogout }) {
 }
 
 export default function App() {
-  const [screen, setScreen] = useState('loading') // loading | login | picker | workspace
+  const [screen, setScreen] = useState('loading') // loading | login | picker | history | settings | workspace
   const [user, setUser] = useState(null)
   const [waiting, setWaiting] = useState(false)
   const [error, setError] = useState('')
-  const [interviews, setInterviews] = useState([])
-  const [interviewsError, setInterviewsError] = useState('')
   const [selectedInterview, setSelectedInterview] = useState(null)
 
   useEffect(() => {
@@ -63,15 +72,6 @@ export default function App() {
     return () => window.clearpilot.offAuthEvents()
   }, [])
 
-  useEffect(() => {
-    if (screen !== 'picker') return
-    setInterviewsError('')
-    window.clearpilot.listInterviews().then((res) => {
-      if (res.success) setInterviews(res.interviews)
-      else setInterviewsError(res.error || 'Could not load interviews')
-    })
-  }, [screen])
-
   function handleSignIn() {
     setError('')
     setWaiting(true)
@@ -81,9 +81,18 @@ export default function App() {
   async function handleLogout() {
     await window.clearpilot.logout()
     setUser(null)
-    setInterviews([])
     setSelectedInterview(null)
     setScreen('login')
+  }
+
+  function handleNavigate(key) {
+    setSelectedInterview(null)
+    setScreen(key)
+  }
+
+  function handleSelectInterview(interview) {
+    setSelectedInterview(interview)
+    setScreen('workspace')
   }
 
   if (screen === 'loading') {
@@ -122,50 +131,22 @@ export default function App() {
 
   return (
     <div className="h-screen flex overflow-hidden font-sans">
-      <Sidebar user={user} onLogout={handleLogout} />
+      <Sidebar user={user} activeScreen={screen} onNavigate={handleNavigate} onLogout={handleLogout} />
 
-      {screen === 'workspace' && selectedInterview ? (
-        <CopilotScreen
-          interview={selectedInterview}
-          onBack={() => { setSelectedInterview(null); setScreen('picker') }}
+      {screen === 'workspace' && selectedInterview && (
+        <InterviewWorkspace interview={selectedInterview} onBack={() => handleNavigate('picker')} />
+      )}
+      {screen === 'picker' && <PickerScreen onSelectInterview={handleSelectInterview} />}
+      {screen === 'history' && <HistoryScreen onSelectInterview={handleSelectInterview} />}
+      {screen === 'settings' && (
+        <SettingsScreen
+          user={user}
+          onProfileUpdated={setUser}
+          onAccountDeleted={() => {
+            setUser(null)
+            setScreen('login')
+          }}
         />
-      ) : (
-        <main className="flex-1 overflow-y-auto">
-          <div className="max-w-3xl mx-auto px-8 py-10">
-            <h1 className="text-2xl font-semibold tracking-tight mb-1">My Interviews</h1>
-            <p className="text-sm text-gray-500 mb-6">Pick an interview to continue in Copilot.</p>
-
-            <div className="space-y-3">
-              {interviewsError && <p className="text-sm text-red-600">{interviewsError}</p>}
-              {!interviewsError && interviews.length === 0 && (
-                <p className="text-sm text-gray-500">No interviews yet - create one on the ClearPilot web app first.</p>
-              )}
-              {interviews.map((interview) => (
-                <button
-                  key={interview.id}
-                  onClick={() => { setSelectedInterview(interview); setScreen('workspace') }}
-                  className="w-full text-left border border-gray-200 rounded-xl p-4 hover:border-purple-300 transition"
-                >
-                  <div className="flex items-start justify-between gap-3 mb-2">
-                    <p className="text-sm font-medium">{interview.title}</p>
-                    <span
-                      className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${STATE_STYLES[interview.state] || 'bg-gray-100 text-gray-500'}`}
-                    >
-                      {interview.state}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {interview.subjects.map((s) => (
-                      <span key={s.id} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-                        {s.name}
-                      </span>
-                    ))}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </main>
       )}
     </div>
   )

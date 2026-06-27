@@ -123,12 +123,122 @@ function registerIpcHandlers() {
     return { success: true }
   })
 
+  ipcMain.handle('profile:update', async (event, { displayName }) => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      const user = await apiClient.updateProfile(token, displayName)
+      authStore.setSession(token, user)
+      return { success: true, user }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('auth:changePassword', async (event, { currentPassword, newPassword }) => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      await apiClient.changePassword(token, currentPassword, newPassword)
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('auth:deleteAccount', async () => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      await apiClient.deleteAccount(token)
+      authStore.clearStoredToken()
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('subjects:list', async () => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      return { success: true, subjects: await apiClient.listSubjects(token) }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
   ipcMain.handle('interviews:list', async () => {
     const token = authStore.getCachedToken()
     if (!token) return { success: false, error: 'Not signed in' }
     try {
       const interviews = await apiClient.listInterviews(token)
       return { success: true, interviews }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('interviews:create', async (event, { title, subjectIds }) => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      const interview = await apiClient.createInterview(token, title, subjectIds)
+      return { success: true, interview }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('interviews:update', async (event, { interviewId, updates }) => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      const interview = await apiClient.updateInterview(token, interviewId, updates)
+      return { success: true, interview }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('interviews:delete', async (event, { interviewId }) => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      await apiClient.deleteInterview(token, interviewId)
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('history:list', async (event, { interviewId, limit }) => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      return { success: true, entries: await apiClient.getHistory(token, interviewId, limit) }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('history:deleteEntry', async (event, { interviewId, entryId }) => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      await apiClient.deleteHistoryEntry(token, interviewId, entryId)
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('history:clear', async (event, { interviewId }) => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      await apiClient.clearHistory(token, interviewId)
+      return { success: true }
     } catch (error) {
       return { success: false, error: error.message }
     }
@@ -150,6 +260,115 @@ function registerIpcHandlers() {
       })
 
     return { success: true }
+  })
+
+  ipcMain.handle('materials:list', async (event, { interviewId }) => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      return { success: true, materials: await apiClient.listMaterials(token, interviewId) }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('materials:create', async (event, { interviewId, type, name, text }) => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      return { success: true, material: await apiClient.createMaterial(token, interviewId, type, name, text) }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // bytes arrives as a Uint8Array over IPC (structured-clone safe); rewrapped into a
+  // Buffer here since that's what api-client's FormData/Blob construction expects.
+  ipcMain.handle('materials:upload', async (event, { interviewId, type, fileName, bytes }) => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      const material = await apiClient.uploadMaterial(token, interviewId, type, fileName, Buffer.from(bytes))
+      return { success: true, material }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('materials:update', async (event, { interviewId, materialId, updates }) => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      const material = await apiClient.updateMaterial(token, interviewId, materialId, updates)
+      return { success: true, material }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('materials:delete', async (event, { interviewId, materialId }) => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      await apiClient.deleteMaterial(token, interviewId, materialId)
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('qa:list', async (event, { interviewId, category, search }) => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      const entries = await apiClient.listQa(token, interviewId, { category, search })
+      return { success: true, entries }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('qa:create', async (event, { interviewId, question, answer }) => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      return { success: true, entry: await apiClient.createQa(token, interviewId, question, answer) }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('qa:upload', async (event, { interviewId, fileName, bytes }) => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      const entries = await apiClient.uploadQa(token, interviewId, fileName, Buffer.from(bytes))
+      return { success: true, entries }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('qa:update', async (event, { interviewId, entryId, updates }) => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      const entry = await apiClient.updateQa(token, interviewId, entryId, updates)
+      return { success: true, entry }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('qa:delete', async (event, { interviewId, entryId }) => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      await apiClient.deleteQa(token, interviewId, entryId)
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
   })
 
   ipcMain.handle('stealth:toggle', async (event, enabled) => {

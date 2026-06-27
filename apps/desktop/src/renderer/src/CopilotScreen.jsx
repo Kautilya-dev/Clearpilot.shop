@@ -13,7 +13,7 @@ function formatTiming(timing) {
   return `${startedClock} · ${firstChunk}done in ${(timing.duration_ms / 1000).toFixed(2)}s`
 }
 
-export default function CopilotScreen({ interview, onBack }) {
+export default function CopilotScreen({ interview }) {
   const [history, setHistory] = useState([]) // completed exchanges, newest first
   const [streaming, setStreaming] = useState(null) // { question, html } | null
   const [input, setInput] = useState('')
@@ -91,20 +91,6 @@ export default function CopilotScreen({ interview, onBack }) {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="border-b border-gray-200 px-8 py-4 shrink-0">
-        <button onClick={onBack} className="text-xs text-gray-400 hover:text-gray-600 inline-flex items-center gap-1 mb-2">
-          &larr; All interviews
-        </button>
-        <h1 className="text-xl font-semibold tracking-tight">{interview.title}</h1>
-        <div className="flex items-center gap-1.5 flex-wrap mt-2">
-          {interview.subjects.map((s) => (
-            <span key={s.id} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-              {s.name}
-            </span>
-          ))}
-        </div>
-      </div>
-
       <div ref={conversationRef} className="flex-1 overflow-y-auto px-8 py-6 space-y-5">
         {streaming && (
           <div className="space-y-3 pb-5 border-b border-gray-100">

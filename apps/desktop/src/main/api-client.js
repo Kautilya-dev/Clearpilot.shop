@@ -59,6 +59,76 @@ async function createInterview(token, title, subjectIds) {
   return res.json()
 }
 
+async function updateInterview(token, interviewId, updates) {
+  const res = await fetch(`${BASE_URL}/api/interviews/${interviewId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(updates)
+  })
+  if (!res.ok) throw new Error(await parseErrorDetail(res))
+  return res.json()
+}
+
+async function deleteInterview(token, interviewId) {
+  const res = await fetch(`${BASE_URL}/api/interviews/${interviewId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` }
+  })
+  if (!res.ok) throw new Error(await parseErrorDetail(res))
+}
+
+async function getHistory(token, interviewId, limit) {
+  const qs = limit ? `?limit=${limit}` : ''
+  const res = await fetch(`${BASE_URL}/api/interviews/${interviewId}/history${qs}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  })
+  if (!res.ok) throw new Error(await parseErrorDetail(res))
+  return res.json()
+}
+
+async function deleteHistoryEntry(token, interviewId, entryId) {
+  const res = await fetch(`${BASE_URL}/api/interviews/${interviewId}/history/${entryId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` }
+  })
+  if (!res.ok) throw new Error(await parseErrorDetail(res))
+}
+
+async function clearHistory(token, interviewId) {
+  const res = await fetch(`${BASE_URL}/api/interviews/${interviewId}/history`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` }
+  })
+  if (!res.ok) throw new Error(await parseErrorDetail(res))
+}
+
+async function updateProfile(token, displayName) {
+  const res = await fetch(`${BASE_URL}/api/auth/me`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ display_name: displayName })
+  })
+  if (!res.ok) throw new Error(await parseErrorDetail(res))
+  return res.json()
+}
+
+async function changePassword(token, currentPassword, newPassword) {
+  const res = await fetch(`${BASE_URL}/api/auth/change-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+  })
+  if (!res.ok) throw new Error(await parseErrorDetail(res))
+}
+
+async function deleteAccount(token) {
+  const res = await fetch(`${BASE_URL}/api/auth/me`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` }
+  })
+  if (!res.ok) throw new Error(await parseErrorDetail(res))
+}
+
 async function listMaterials(token, interviewId) {
   const res = await fetch(`${BASE_URL}/api/interviews/${interviewId}/materials`, {
     headers: { Authorization: `Bearer ${token}` }
@@ -89,6 +159,74 @@ async function updateMaterial(token, interviewId, materialId, updates) {
 
 async function deleteMaterial(token, interviewId, materialId) {
   const res = await fetch(`${BASE_URL}/api/interviews/${interviewId}/materials/${materialId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` }
+  })
+  if (!res.ok) throw new Error(await parseErrorDetail(res))
+}
+
+// fileBuffer is a Buffer reconstructed (in main/index.js) from bytes the renderer read via
+// File.arrayBuffer() and sent over IPC - file content never needs to touch the renderer's
+// network stack, matching the "auth/HTTP only happens in main" rule at the top of this file.
+async function uploadMaterial(token, interviewId, type, fileName, fileBuffer) {
+  const form = new FormData()
+  form.append('type', type)
+  form.append('file', new Blob([fileBuffer]), fileName)
+  const res = await fetch(`${BASE_URL}/api/interviews/${interviewId}/materials/upload`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form
+  })
+  if (!res.ok) throw new Error(await parseErrorDetail(res))
+  return res.json()
+}
+
+async function listQa(token, interviewId, { category, search } = {}) {
+  const params = new URLSearchParams()
+  if (category) params.set('category', category)
+  if (search) params.set('search', search)
+  const qs = params.toString()
+  const res = await fetch(`${BASE_URL}/api/interviews/${interviewId}/qa${qs ? `?${qs}` : ''}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  })
+  if (!res.ok) throw new Error(await parseErrorDetail(res))
+  return res.json()
+}
+
+async function createQa(token, interviewId, question, answer) {
+  const res = await fetch(`${BASE_URL}/api/interviews/${interviewId}/qa`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ question, answer })
+  })
+  if (!res.ok) throw new Error(await parseErrorDetail(res))
+  return res.json()
+}
+
+async function uploadQa(token, interviewId, fileName, fileBuffer) {
+  const form = new FormData()
+  form.append('file', new Blob([fileBuffer]), fileName)
+  const res = await fetch(`${BASE_URL}/api/interviews/${interviewId}/qa/upload`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form
+  })
+  if (!res.ok) throw new Error(await parseErrorDetail(res))
+  return res.json()
+}
+
+async function updateQa(token, interviewId, entryId, updates) {
+  const res = await fetch(`${BASE_URL}/api/interviews/${interviewId}/qa/${entryId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(updates)
+  })
+  if (!res.ok) throw new Error(await parseErrorDetail(res))
+  return res.json()
+}
+
+async function deleteQa(token, interviewId, entryId) {
+  const res = await fetch(`${BASE_URL}/api/interviews/${interviewId}/qa/${entryId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` }
   })
@@ -127,4 +265,30 @@ async function askQuestion(token, interviewId, question, onEvent) {
   }
 }
 
-module.exports = { BASE_URL, desktopExchange, getCurrentUser, listInterviews, askQuestion }
+module.exports = {
+  BASE_URL,
+  desktopExchange,
+  getCurrentUser,
+  updateProfile,
+  changePassword,
+  deleteAccount,
+  listInterviews,
+  listSubjects,
+  createInterview,
+  updateInterview,
+  deleteInterview,
+  getHistory,
+  deleteHistoryEntry,
+  clearHistory,
+  listMaterials,
+  createMaterial,
+  uploadMaterial,
+  updateMaterial,
+  deleteMaterial,
+  askQuestion,
+  listQa,
+  createQa,
+  uploadQa,
+  updateQa,
+  deleteQa
+}

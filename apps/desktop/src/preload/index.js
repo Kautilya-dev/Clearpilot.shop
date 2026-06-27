@@ -15,7 +15,20 @@ contextBridge.exposeInMainWorld('clearpilot', {
     ipcRenderer.removeAllListeners('auth:loginFailed')
   },
 
+  updateProfile: (displayName) => ipcRenderer.invoke('profile:update', { displayName }),
+  changePassword: (currentPassword, newPassword) =>
+    ipcRenderer.invoke('auth:changePassword', { currentPassword, newPassword }),
+  deleteAccount: () => ipcRenderer.invoke('auth:deleteAccount'),
+
+  listSubjects: () => ipcRenderer.invoke('subjects:list'),
   listInterviews: () => ipcRenderer.invoke('interviews:list'),
+  createInterview: (title, subjectIds) => ipcRenderer.invoke('interviews:create', { title, subjectIds }),
+  updateInterview: (interviewId, updates) => ipcRenderer.invoke('interviews:update', { interviewId, updates }),
+  deleteInterview: (interviewId) => ipcRenderer.invoke('interviews:delete', { interviewId }),
+
+  getHistory: (interviewId, limit) => ipcRenderer.invoke('history:list', { interviewId, limit }),
+  deleteHistoryEntry: (interviewId, entryId) => ipcRenderer.invoke('history:deleteEntry', { interviewId, entryId }),
+  clearHistory: (interviewId) => ipcRenderer.invoke('history:clear', { interviewId }),
 
   askQuestion: (interviewId, question) => ipcRenderer.invoke('chat:ask', { interviewId, question }),
   onChatEvent: (callback) => {
@@ -26,5 +39,20 @@ contextBridge.exposeInMainWorld('clearpilot', {
   },
 
   toggleStealth: (enabled) => ipcRenderer.invoke('stealth:toggle', enabled),
-  getStealthStatus: () => ipcRenderer.invoke('stealth:getStatus')
+  getStealthStatus: () => ipcRenderer.invoke('stealth:getStatus'),
+
+  listMaterials: (interviewId) => ipcRenderer.invoke('materials:list', { interviewId }),
+  createMaterial: (interviewId, type, name, text) =>
+    ipcRenderer.invoke('materials:create', { interviewId, type, name, text }),
+  uploadMaterial: (interviewId, type, fileName, bytes) =>
+    ipcRenderer.invoke('materials:upload', { interviewId, type, fileName, bytes }),
+  updateMaterial: (interviewId, materialId, updates) =>
+    ipcRenderer.invoke('materials:update', { interviewId, materialId, updates }),
+  deleteMaterial: (interviewId, materialId) => ipcRenderer.invoke('materials:delete', { interviewId, materialId }),
+
+  listQa: (interviewId, filters) => ipcRenderer.invoke('qa:list', { interviewId, ...filters }),
+  createQa: (interviewId, question, answer) => ipcRenderer.invoke('qa:create', { interviewId, question, answer }),
+  uploadQa: (interviewId, fileName, bytes) => ipcRenderer.invoke('qa:upload', { interviewId, fileName, bytes }),
+  updateQa: (interviewId, entryId, updates) => ipcRenderer.invoke('qa:update', { interviewId, entryId, updates }),
+  deleteQa: (interviewId, entryId) => ipcRenderer.invoke('qa:delete', { interviewId, entryId })
 })
