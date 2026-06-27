@@ -2,11 +2,12 @@
 
 SAP CPI interview-prep tool. Web app (`apps/web`, FastAPI + Postgres + Redis, deployed on
 Railway at clearpilot.shop) is live and in active use. Desktop app (`apps/desktop`,
-Electron + React, npm workspace sibling to `apps/web`) is in active development — auth,
-stealth screen-share-hiding, the interview picker, and Copilot streaming are built; not yet
-packaged/distributed, and has no Materials/Q&A tabs (Copilot-only so far). Rebuilt from
-scratch this cycle — nothing carried over from the prior HireGhost Electron app or the
-earlier single-password interview-assistant prototype.
+Electron + React, npm workspace sibling to `apps/web`) now has Materials/Q&A/Copilot/Job
+Mode tabs, interview creation, History, and Settings (Account/Styling/Behaviour) - full
+parity with the web app plus a live-listening feature the web app doesn't have. Not yet
+packaged/distributed. Rebuilt from scratch this cycle — nothing carried over from the prior
+HireGhost Electron app or the earlier single-password interview-assistant prototype, though
+HireGhost's proven speaker-capture pipeline was ported for the live-listening feature below.
 
 Last updated: 2026-06-27.
 
@@ -34,6 +35,21 @@ Last updated: 2026-06-27.
   resulting one-time code for a JWT via `/api/auth/desktop-exchange`. Copilot streaming
   (`chat:ask`/`chat:event` over IPC) mirrors `apps/web`'s `/chat/ask` SSE handling exactly.
   A native stealth addon (`native/stealth`) can exclude the window from screen capture/share.
+- **Desktop settings persistence**: a local `settings.json` (in Electron's `userData` dir,
+  via `apps/desktop/src/main/settings-store.js`) holds window opacity/always-on-top and
+  Styling colors/sizes — mirrors HireGhost's `settingsManager.js` pattern. Account-level
+  things (display name, password) go through the real backend instead, same as the web app.
+- **Live listening / Realtime architecture**: speaker and mic audio are each captured via
+  plain Electron Web APIs (`desktopCapturer` + `getDisplayMedia` for speaker loopback,
+  `getUserMedia` for mic) — no native C++ needed; researched and confirmed this is what
+  Slack/Discord/Zoom do too. The real OpenAI key never reaches the desktop app: the backend
+  mints a short-lived ephemeral token (`POST /api/interviews/{id}/realtime-token`, wrapping
+  OpenAI's `POST /v1/realtime/client_secrets`) and the desktop main process connects
+  directly to OpenAI's Realtime WebSocket with that token. Mic and Speaker each
+  independently transcribe and trigger the same `askQuestion` flow as typing — they're
+  alternative input methods, not a separate feature — except when both run together, where
+  the meaning of the mic transcript switches from "ask a question" to "the answer to judge
+  against whatever Speaker just asked" (see Job Mode in Remaining, below).
 
 ## Shipped this cycle
 
@@ -101,6 +117,29 @@ Last updated: 2026-06-27.
   throttled version did ~74 re-renders instead of 142, frame-bounded rather than
   chunk-bounded, with the final answer byte-for-byte correct.
 
+**Desktop feature parity: Materials/Q&A, interview creation, History, Settings** (`0ec3790`)
+- Desktop's per-interview workspace gained Materials and Q&A tabs (text/file upload, AI
+  category/tag badges, search, active toggle) — `api-client.js` already had Materials
+  functions defined but never exported (dead code); fixed alongside adding the rest.
+- New-interview creation (title + subject multi-select) on the picker; previously desktop
+  could only browse interviews created on the web app.
+- History screen (state-filtered list of past interviews, click to resume, delete) and
+  Settings (profile, change password, delete account with double confirmation) — the
+  sidebar nav was fully non-functional before this (one static, unclickable button).
+
+**Settings Styling/Behaviour, History date grouping, live Speaker listening** (`fb29e27`, `bec4335`)
+- Settings split into Account/Styling/Behaviour tabs. Behaviour: stealth toggle (the IPC
+  existed since the previous entry but had no UI), always-on-top, transparency. Styling:
+  per-element background/font color/size for question and answer bubbles, applied live via
+  CSS custom properties, persisted locally (see settings-persistence architecture above).
+- History now buckets by Today/Yesterday/calendar date instead of one flat list.
+- Live listening, phase 1 of 3: Speaker-only. Toggling Speaker in the Copilot tab captures
+  system/loopback audio, transcribes it via a per-session OpenAI Realtime connection, and
+  feeds the transcript into the same `askQuestion` flow as typing — see the Realtime
+  architecture note above for the ephemeral-token security model. Mic shows as disabled
+  ("coming soon") in the same control row; a new, currently-inert "Job Mode" tab is
+  scaffolded for phase 3.
+
 ## Test credentials
 
 - Admin (also the real account in active use, `Krishna (Admin)`):
@@ -117,11 +156,21 @@ a fresh interview for throwaway testing instead of touching existing rows.
 - **`apps/desktop` packaging**: still runs via `npm run dev` only (electron-vite). No
   installer build verified yet, no icon/branding pass, not installed as a Start Menu app
   on the dev machine — `electron-builder`'s NSIS config exists in `package.json` but is
-  untested.
-- **`apps/desktop` Materials/Q&A tabs**: the per-interview workspace is Copilot-only;
-  the web app's Materials and Q&A tabs have no desktop counterpart yet. Unclear whether
-  desktop needs them at all, or stays a Copilot-only "live assist" companion to the web
-  app's "study" side (see open question below).
+  untested. Deliberately last in priority among current desktop work.
+- **Live listening phase 2 — Mic**: same trigger mechanism as Speaker (transcribe →
+  `askQuestion`), just `getUserMedia` instead of `desktopCapturer`. Explicitly **no device
+  picker** — auto-pick the OS default input device, same simplicity as Speaker's default
+  output device, per direct request. `setPermissionRequestHandler` for microphone/media/
+  audioCapture still needs adding to `main/index.js` (Speaker's `setDisplayMediaRequestHandler`
+  doesn't cover mic permission).
+- **Live listening phase 3 — Job Mode (Both + AI Judge)**: the actual reason this feature
+  exists. With both devices active, Speaker keeps triggering suggested answers as normal;
+  Mic stops triggering its own questions and instead becomes "what the user actually said,"
+  paired against the most recent Speaker-triggered question+answer and sent to a new
+  `judge_spoken_answer` backend call (modeled on `qa_judge_service.py`'s shape) that returns
+  corrective feedback. Feedback is ephemeral by design (not persisted) — matches the
+  existing precedent of not persisting timing telemetry either. The "Job Mode" tab is
+  scaffolded (disabled "Both" button) but has no logic yet.
 - **AI-generated-answer caching**: discussed but not built. Distinct from the Q&A-bank
   shortcut (which only ever serves the user's *own* saved/judged answers) — this would be
   a Redis cache of fresh AI generations for repeated/similar *novel* questions, to avoid
@@ -141,11 +190,17 @@ a fresh interview for throwaway testing instead of touching existing rows.
 - `apps/desktop` does reuse `apps/web`'s design language in practice (same Tailwind purple
   accent, same markdown CSS, Copilot ported line-for-line from `submitQuestion()`) — that
   direction has been set by precedent, not an explicit decision.
-- Does `apps/desktop` ever get Materials/Q&A tabs, or does it stay deliberately Copilot-only
-  (a "live assist" companion during an actual interview, distinct from the web app's
-  "study/prep" role)? Affects how much more desktop work is actually left.
 - When does `apps/desktop` need to be packaged/distributed (installer, icon, auto-update),
   versus staying a `npm run dev`-only tool for personal use?
+- Job Mode's pairing logic (Speaker question → suggested answer → Mic's spoken answer →
+  judge) assumes one clean back-and-forth at a time. Real interview pacing might not be
+  that clean (a second Speaker question before the user finishes answering the first, mid-
+  answer pauses tripping turn-detection early) — needs real-use testing once phase 3 lands,
+  not something resolvable by reasoning about it in advance.
+- Mic/Speaker's `echoCancellation`/`noiseSuppression`/`autoGainControl: false` defaults were
+  ported as-is from HireGhost's speaker-tuned settings. Worth testing `true` for mic
+  specifically once phase 2 lands — browser noise suppression might genuinely help mic
+  transcription quality without the downside it'd have for speaker loopback.
 - Is the AI-generated-answer cache worth building, or does the Q&A-bank shortcut +
   judge cover enough of the real latency complaints already? Revisit once there's more
   usage data on how often genuinely novel (non-bank-matched) questions repeat.
