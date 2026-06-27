@@ -36,8 +36,13 @@ async def mint_realtime_token(
     instructions = SPEAKER_INSTRUCTIONS if body.source == "speaker" else MIC_INSTRUCTIONS
     try:
         result = await mint_ephemeral_token(instructions)
+    except httpx.HTTPStatusError as e:
+        # Cloudflare (this app sits behind it in production) replaces any 502/503/504 from
+        # the origin with its own generic error page, swallowing this detail entirely - use
+        # 500 so the real message actually reaches the desktop app.
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"OpenAI rejected the request: {e.response.text}")
     except httpx.HTTPError as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Could not start realtime session: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not reach OpenAI: {e}")
     return RealtimeTokenResponse(
         client_secret=result["value"], expires_at=result["expires_at"], model=REALTIME_MODEL
     )
