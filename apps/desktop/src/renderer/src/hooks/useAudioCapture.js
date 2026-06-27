@@ -99,7 +99,21 @@ export function useAudioCapture() {
       )
       speakerRef.current = { stream, audioContext, processor }
       stream.getTracks().forEach((t) => t.addEventListener('ended', () => stopSpeakerCapture()))
-      setSpeakerDeviceName(stream.getAudioTracks()[0]?.label || 'System Audio')
+
+      // WASAPI loopback track label is always a generic string. Enumerate audiooutput
+      // devices to get the real name shown in Windows Sound settings instead.
+      let deviceName = stream.getAudioTracks()[0]?.label || 'System Audio'
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices()
+        // Windows enumerates: "Default - Speakers (...)", "Communications - Speakers (...)", "Speakers (...)"
+        // The bare entry without a role prefix is the actual device name.
+        const outputs = devices.filter((d) => d.kind === 'audiooutput' && d.label)
+        const bare = outputs.find((d) => !d.label.startsWith('Default') && !d.label.startsWith('Communications'))
+        if (bare) deviceName = bare.label
+      } catch {
+        // enumerateDevices failed — keep the track label fallback
+      }
+      setSpeakerDeviceName(deviceName)
       setSpeakerCapturing(true)
       return { success: true }
     } catch (e) {

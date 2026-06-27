@@ -1,13 +1,63 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import AccountTab from './AccountTab'
 import StylingTab from './StylingTab'
 import BehaviourTab from './BehaviourTab'
 
 const TABS = [
   { key: 'account', label: 'Account' },
+  { key: 'openai', label: 'OpenAI' },
   { key: 'styling', label: 'Styling' },
   { key: 'behaviour', label: 'Behaviour' }
 ]
+
+function OpenAITab() {
+  const [apiKey, setApiKey] = useState('')
+  const [saved, setSaved] = useState(false)
+  const [show, setShow] = useState(false)
+
+  useEffect(() => {
+    window.clearpilot.getSettings().then((s) => setApiKey(s.openai?.apiKey || ''))
+  }, [])
+
+  async function handleSave() {
+    await window.clearpilot.saveSettings({ openai: { apiKey } })
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">OpenAI API Key</label>
+        <p className="text-xs text-gray-500 mb-2">
+          Used directly by the desktop app for speaker/mic transcription via the Realtime API.
+          Never sent to the ClearPilot server.
+        </p>
+        <div className="flex gap-2">
+          <input
+            type={show ? 'text' : 'password'}
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder="sk-proj-..."
+            className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500"
+          />
+          <button
+            onClick={() => setShow((v) => !v)}
+            className="px-3 py-2 text-xs border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50"
+          >
+            {show ? 'Hide' : 'Show'}
+          </button>
+        </div>
+      </div>
+      <button
+        onClick={handleSave}
+        className="px-4 py-2 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700"
+      >
+        {saved ? 'Saved!' : 'Save'}
+      </button>
+    </div>
+  )
+}
 
 export default function SettingsScreen({ user, onProfileUpdated, onAccountDeleted }) {
   const [activeTab, setActiveTab] = useState('account')
@@ -36,6 +86,7 @@ export default function SettingsScreen({ user, onProfileUpdated, onAccountDelete
         {activeTab === 'account' && (
           <AccountTab user={user} onProfileUpdated={onProfileUpdated} onAccountDeleted={onAccountDeleted} />
         )}
+        {activeTab === 'openai' && <OpenAITab />}
         {activeTab === 'styling' && <StylingTab />}
         {activeTab === 'behaviour' && <BehaviourTab />}
       </div>

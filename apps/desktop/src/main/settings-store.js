@@ -5,6 +5,7 @@ const path = require('path')
 const DEFAULTS = {
   window: { opacity: 1, alwaysOnTop: false },
   behavior: { stealthMode: false },
+  openai: { apiKey: '' },
   styles: {
     overallBg: '#ffffff',
     questionBg: '#7c3aed',
@@ -28,15 +29,22 @@ let cached = null
 function load() {
   if (cached) return cached
   try {
-    const raw = fs.readFileSync(settingsFilePath(), 'utf-8')
+    const raw = fs.readFileSync(settingsFilePath(), 'utf-8').replace(/^﻿/, '')
     const stored = JSON.parse(raw)
     cached = {
       window: { ...DEFAULTS.window, ...stored.window },
       behavior: { ...DEFAULTS.behavior, ...stored.behavior },
+      openai: { ...DEFAULTS.openai, ...stored.openai },
       styles: { ...DEFAULTS.styles, ...stored.styles }
     }
   } catch {
-    cached = { ...DEFAULTS, window: { ...DEFAULTS.window }, behavior: { ...DEFAULTS.behavior }, styles: { ...DEFAULTS.styles } }
+    cached = {
+      ...DEFAULTS,
+      window: { ...DEFAULTS.window },
+      behavior: { ...DEFAULTS.behavior },
+      openai: { ...DEFAULTS.openai },
+      styles: { ...DEFAULTS.styles }
+    }
   }
   return cached
 }
@@ -51,6 +59,7 @@ function save(updates) {
   cached = {
     window: { ...current.window, ...updates.window },
     behavior: { ...current.behavior, ...updates.behavior },
+    openai: { ...current.openai, ...updates.openai },
     styles: { ...current.styles, ...updates.styles }
   }
   fs.writeFileSync(settingsFilePath(), JSON.stringify(cached, null, 2))

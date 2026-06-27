@@ -47,14 +47,20 @@ contextBridge.exposeInMainWorld('clearpilot', {
   startListening: (interviewId, source) => ipcRenderer.invoke('listening:start', { interviewId, source }),
   stopListening: (source) => ipcRenderer.invoke('listening:stop', { source }),
   sendAudioChunk: (source, base64Data) => ipcRenderer.invoke('listening:audioChunk', { source, base64Data }),
-  onListeningTranscript: (callback) => {
-    ipcRenderer.on('listening:transcript', (event, data) => callback(data))
+  // What was heard from mic/speaker → show in question area
+  onListeningQuestion: (callback) => {
+    ipcRenderer.on('listening:question', (event, data) => callback(data))
+  },
+  // GPT's answer → show in answer area directly
+  onListeningAnswer: (callback) => {
+    ipcRenderer.on('listening:answer', (event, data) => callback(data))
   },
   onListeningError: (callback) => {
     ipcRenderer.on('listening:error', (event, data) => callback(data))
   },
   offListeningEvents: () => {
-    ipcRenderer.removeAllListeners('listening:transcript')
+    ipcRenderer.removeAllListeners('listening:question')
+    ipcRenderer.removeAllListeners('listening:answer')
     ipcRenderer.removeAllListeners('listening:error')
   },
 

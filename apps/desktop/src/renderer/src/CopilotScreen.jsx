@@ -104,7 +104,7 @@ export default function CopilotScreen({
                 ))}
               </div>
             )}
-            <p className="text-xs text-gray-400 pl-1">{formatTiming(exchange.timing)}</p>
+            {exchange.timing && <p className="text-xs text-gray-400 pl-1">{formatTiming(exchange.timing)}</p>}
           </div>
         ))}
       </div>

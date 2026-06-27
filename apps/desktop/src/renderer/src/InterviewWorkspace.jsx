@@ -78,12 +78,30 @@ export default function InterviewWorkspace({ interview, onBack }) {
     return () => window.clearpilot.offChatEvent()
   }, [])
 
+  const speakerTranscriptRef = useRef('')
+
   useEffect(() => {
-    window.clearpilot.onListeningTranscript(({ source, text }) => {
-      if (source === 'speaker') {
-        setSpeakerTranscript(text)
-        submitQuestion(text)
-      }
+    // Transcript of what was heard → show in question bubble while GPT processes
+    window.clearpilot.onListeningQuestion(({ text }) => {
+      speakerTranscriptRef.current = text
+      setSpeakerTranscript(text)
+    })
+    // GPT's text answer → push directly into history, using the transcript as the question label
+    window.clearpilot.onListeningAnswer(({ source, text }) => {
+      const question = speakerTranscriptRef.current || (source === 'speaker' ? '🎤 Speaker' : '🎤 Mic')
+      speakerTranscriptRef.current = ''
+      setSpeakerTranscript('')
+      const html = renderMarkdown(text)
+      setHistory((h) => [
+        {
+          question,
+          html,
+          sources: [],
+          badge: '🎤 Live audio',
+          timing: null
+        },
+        ...h
+      ])
     })
     window.clearpilot.onListeningError(({ message }) => setListenError(message))
     return () => window.clearpilot.offListeningEvents()

@@ -431,13 +431,17 @@ function registerIpcHandlers() {
   // source is 'speaker' or 'mic' - same handlers manage both independent sessions, so
   // Judge mode (both running together) needs no separate IPC wiring beyond this.
   async function startListeningSession(interviewId, source, isRetry = false) {
-    const token = authStore.getCachedToken()
-    if (!token) return { success: false, error: 'Not signed in' }
+    const apiKey = settingsStore.getAll().openai?.apiKey
+    if (!apiKey) return { success: false, error: 'OpenAI API key not set. Add it in Settings.' }
     try {
-      const { client_secret } = await apiClient.mintRealtimeToken(token, interviewId, source)
-      const manager = new RealtimeSessionManager(client_secret)
-      manager.setTranscriptCallback((text) => {
-        mainWindow?.webContents.send('listening:transcript', { source, text })
+      const manager = new RealtimeSessionManager(apiKey)
+      // What the mic/speaker heard → question area in UI
+      manager.setQuestionCallback((text) => {
+        mainWindow?.webContents.send('listening:question', { source, text })
+      })
+      // GPT's answer → answer area in UI (NOT sent to /chat/ask)
+      manager.setAnswerCallback((text) => {
+        mainWindow?.webContents.send('listening:answer', { source, text })
       })
       manager.setErrorCallback(async (error) => {
         const wasIntentional = source === 'speaker' ? speakerStopIntentional : micStopIntentional
@@ -445,16 +449,19 @@ function registerIpcHandlers() {
           mainWindow?.webContents.send('listening:error', { source, message: error.message })
           return
         }
-        // One silent reconnect attempt (fresh token - the old one may have expired)
-        // before surfacing anything to the user.
+        // One silent reconnect on transient disconnect before surfacing error to UI.
         const retryResult = await startListeningSession(interviewId, source, true)
         if (!retryResult.success) {
           mainWindow?.webContents.send('listening:error', { source, message: error.message })
         }
       })
-      // Same instructions regardless of source - both sessions only ever transcribe,
-      // never generate a response, so there's no behavioral difference to prompt for.
-      await manager.connect('You are a silent transcription assistant. Transcribe the audio you hear into English text only.')
+      // gpt-realtime-2 hears the interviewer's audio and answers directly in text.
+      await manager.connect(
+        'You are an expert SAP CPI (Cloud Integration) interview assistant. ' +
+        'Listen to the interviewer\'s question and respond with a clear, concise, accurate answer. ' +
+        'Focus on SAP Integration Suite, CPI iFlows, adapters, mappings, security, and best practices. ' +
+        'Keep answers under 5 sentences unless a detailed explanation is needed.'
+      )
       if (source === 'speaker') {
         speakerSession = manager
         speakerStopIntentional = false
