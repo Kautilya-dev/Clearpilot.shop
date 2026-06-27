@@ -1,11 +1,14 @@
 # ClearPilot — Planning
 
 SAP CPI interview-prep tool. Web app (`apps/web`, FastAPI + Postgres + Redis, deployed on
-Railway at clearpilot.shop) is live and in active use. Desktop app (`apps/desktop`) is
-planned but not started. Rebuilt from scratch this cycle — nothing carried over from the
-prior HireGhost Electron app or the earlier single-password interview-assistant prototype.
+Railway at clearpilot.shop) is live and in active use. Desktop app (`apps/desktop`,
+Electron + React, npm workspace sibling to `apps/web`) is in active development — auth,
+stealth screen-share-hiding, the interview picker, and Copilot streaming are built; not yet
+packaged/distributed, and has no Materials/Q&A tabs (Copilot-only so far). Rebuilt from
+scratch this cycle — nothing carried over from the prior HireGhost Electron app or the
+earlier single-password interview-assistant prototype.
 
-Last updated: 2026-06-25.
+Last updated: 2026-06-27.
 
 ## Architecture, current state
 
@@ -22,6 +25,15 @@ Last updated: 2026-06-25.
 - **Redis**: cache only, in front of Postgres (Postgres is always source of truth) — caches
   the per-interview Q&A list, invalidated on every write. Not used for anything else yet.
 - **Frontend**: static HTML/Tailwind-CDN/vanilla JS, no build step, served by FastAPI.
+- **Desktop app** (`apps/desktop`): Electron + React (electron-vite). Auth uses a one-shot
+  local HTTP callback server (`http://127.0.0.1:<port>/callback`) instead of a custom
+  `clearpilot://` URL protocol — the protocol registered fine in the Windows registry but
+  the OS silently never invoked it; switched to the same local-server pattern `gh auth
+  login --web`/`gcloud auth login` use, for the same reliability reason. Sign-in opens the
+  system browser to `clearpilot.shop/login?desktop=1&port=...`, then exchanges the
+  resulting one-time code for a JWT via `/api/auth/desktop-exchange`. Copilot streaming
+  (`chat:ask`/`chat:event` over IPC) mirrors `apps/web`'s `/chat/ask` SSE handling exactly.
+  A native stealth addon (`native/stealth`) can exclude the window from screen capture/share.
 
 ## Shipped this cycle
 
@@ -66,6 +78,29 @@ Last updated: 2026-06-25.
   not just the live-append path).
 - Fixed a self-XSS: typed questions were interpolated into the page unescaped.
 
+**Desktop app v1 + Copilot streaming** (`29abfc9`, `b3c3094`)
+- Electron + React app scaffolded: sign-in via system browser, native stealth toggle,
+  interview picker reading from the same `/api/interviews` the web app uses.
+- Copilot tab ported from `apps/web`'s `submitQuestion()`: streamed, markdown-rendered
+  answers over IPC, with the same chunk-render throttle fix described below.
+- Not yet packaged as an installer (still `npm run dev` only) and has no Materials/Q&A
+  tabs — Copilot is the only thing in the per-interview workspace so far.
+
+**Copilot render-throttle fix** (`b3c3094`)
+- Both `apps/desktop`'s `CopilotScreen.jsx` and `apps/web`'s `interview.html` re-parsed and
+  re-sanitized the *entire* accumulated markdown answer on every streamed chunk. Cost grows
+  with answer length (100+ chunks for a long answer) and visibly lagged behind actual
+  chunk-arrival rate by the end of a long response.
+- Fix: buffer each chunk's text immediately and cheaply, but only run the expensive
+  parse+sanitize once per `requestAnimationFrame`, gated by a pending-flag so multiple
+  chunks arriving within one frame collapse into a single re-render. On the stream's `done`
+  event, render directly from the buffered text rather than trusting the last throttled
+  frame, since one can still be pending when the stream ends.
+- Verified by mounting the real `CopilotScreen` component standalone (Vite dev server,
+  `window.clearpilot` IPC bridge mocked) and replaying 142 synthetic chunks ~3ms apart:
+  throttled version did ~74 re-renders instead of 142, frame-bounded rather than
+  chunk-bounded, with the final answer byte-for-byte correct.
+
 ## Test credentials
 
 - Admin (also the real account in active use, `Krishna (Admin)`):
@@ -79,8 +114,14 @@ a fresh interview for throwaway testing instead of touching existing rows.
 
 ## Remaining / not started
 
-- **`apps/desktop`**: not started at all. No scope, design, or connectivity decisions made
-  yet for a desktop "copilot" counterpart to the web "study" app.
+- **`apps/desktop` packaging**: still runs via `npm run dev` only (electron-vite). No
+  installer build verified yet, no icon/branding pass, not installed as a Start Menu app
+  on the dev machine — `electron-builder`'s NSIS config exists in `package.json` but is
+  untested.
+- **`apps/desktop` Materials/Q&A tabs**: the per-interview workspace is Copilot-only;
+  the web app's Materials and Q&A tabs have no desktop counterpart yet. Unclear whether
+  desktop needs them at all, or stays a Copilot-only "live assist" companion to the web
+  app's "study" side (see open question below).
 - **AI-generated-answer caching**: discussed but not built. Distinct from the Q&A-bank
   shortcut (which only ever serves the user's *own* saved/judged answers) — this would be
   a Redis cache of fresh AI generations for repeated/similar *novel* questions, to avoid
@@ -97,8 +138,14 @@ a fresh interview for throwaway testing instead of touching existing rows.
 
 ## Open questions
 
-- Should `apps/desktop` reuse any UI/design language from `apps/web`, or be a from-scratch
-  native build? No direction set yet.
+- `apps/desktop` does reuse `apps/web`'s design language in practice (same Tailwind purple
+  accent, same markdown CSS, Copilot ported line-for-line from `submitQuestion()`) — that
+  direction has been set by precedent, not an explicit decision.
+- Does `apps/desktop` ever get Materials/Q&A tabs, or does it stay deliberately Copilot-only
+  (a "live assist" companion during an actual interview, distinct from the web app's
+  "study/prep" role)? Affects how much more desktop work is actually left.
+- When does `apps/desktop` need to be packaged/distributed (installer, icon, auto-update),
+  versus staying a `npm run dev`-only tool for personal use?
 - Is the AI-generated-answer cache worth building, or does the Q&A-bank shortcut +
   judge cover enough of the real latency complaints already? Revisit once there's more
   usage data on how often genuinely novel (non-bank-matched) questions repeat.
