@@ -108,20 +108,24 @@ export default function InterviewWorkspace({ interview, onBack }) {
 
   async function startListening(source) {
     setListenError('')
-    const res = await window.clearpilot.startListening(interview.id, source)
-    if (!res.success) {
-      setListenError(res.error)
-      return
-    }
+    // Capture audio first so device name appears in the status strip immediately,
+    // independent of how long token minting takes.
     if (source === 'speaker') {
       const captureRes = await audioCapture.startSpeakerCapture()
       if (!captureRes.success) {
         setListenError(captureRes.message)
-        await window.clearpilot.stopListening('speaker')
         return
       }
+      setListenMode(source)
     }
-    setListenMode(source)
+    const res = await window.clearpilot.startListening(interview.id, source)
+    if (!res.success) {
+      setListenError(res.error)
+      if (source === 'speaker') {
+        audioCapture.stopSpeakerCapture()
+        setListenMode('off')
+      }
+    }
   }
 
   async function stopListening() {

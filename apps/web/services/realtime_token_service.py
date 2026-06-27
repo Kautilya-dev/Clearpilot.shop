@@ -25,7 +25,6 @@ async def mint_ephemeral_token(instructions: str) -> dict:
             "https://api.openai.com/v1/realtime/client_secrets",
             headers={"Authorization": f"Bearer {settings.openai_api_key}", "Content-Type": "application/json"},
             json={
-                "model": REALTIME_MODEL,
                 "modalities": ["text"],
                 "instructions": instructions,
                 "input_audio_format": "pcm16",
