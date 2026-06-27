@@ -186,6 +186,7 @@ export default function InterviewWorkspace({ interview, onBack }) {
           onSubmit={submitQuestion}
           listenMode={listenMode}
           speakerLevel={audioCapture.speakerLevel}
+          speakerDeviceName={audioCapture.speakerDeviceName}
           speakerTranscript={speakerTranscript}
           listenError={listenError}
           onStartListening={startListening}

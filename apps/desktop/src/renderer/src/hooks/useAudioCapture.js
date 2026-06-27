@@ -72,6 +72,7 @@ function buildProcessor(stream, audioContext, setLevel, onChunk) {
 export function useAudioCapture() {
   const [speakerCapturing, setSpeakerCapturing] = useState(false)
   const [speakerLevel, setSpeakerLevel] = useState(0)
+  const [speakerDeviceName, setSpeakerDeviceName] = useState(null)
   const [error, setError] = useState(null)
 
   const speakerRef = useRef(makeStreamState())
@@ -98,6 +99,7 @@ export function useAudioCapture() {
       )
       speakerRef.current = { stream, audioContext, processor }
       stream.getTracks().forEach((t) => t.addEventListener('ended', () => stopSpeakerCapture()))
+      setSpeakerDeviceName(stream.getAudioTracks()[0]?.label || 'System Audio')
       setSpeakerCapturing(true)
       return { success: true }
     } catch (e) {
@@ -111,6 +113,7 @@ export function useAudioCapture() {
     teardownStream(speakerRef)
     setSpeakerCapturing(false)
     setSpeakerLevel(0)
+    setSpeakerDeviceName(null)
   }, [])
 
   useEffect(() => {
@@ -120,6 +123,7 @@ export function useAudioCapture() {
   return {
     speakerCapturing,
     speakerLevel,
+    speakerDeviceName,
     error,
     startSpeakerCapture,
     stopSpeakerCapture

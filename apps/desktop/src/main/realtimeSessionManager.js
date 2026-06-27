@@ -31,8 +31,7 @@ class RealtimeSessionManager {
   _openSocket() {
     return new WebSocket(REALTIME_URL, {
       headers: {
-        Authorization: `Bearer ${this.clientSecret}`,
-        'OpenAI-Beta': 'realtime=v1'
+        Authorization: `Bearer ${this.clientSecret}`
       }
     })
   }
@@ -54,14 +53,17 @@ class RealtimeSessionManager {
       }
 
       ws.on('open', () => {
+        // input_audio_transcription must be explicitly enabled or .completed events never fire.
+        // input_audio_format 'pcm16' = s16le at 24kHz (the only rate the Realtime API accepts).
+        // modalities replaces the incorrect 'output_modalities' field name.
+        // model/type do not belong in session.update - the model is already in the WebSocket URL.
         const sessionUpdate = {
           type: 'session.update',
           session: {
-            type: 'realtime',
-            model: REALTIME_MODEL,
             instructions,
-            output_modalities: ['text'],
-            audio: { input: { format: 'audio/pcm', rate: 24000 } }
+            modalities: ['text'],
+            input_audio_format: 'pcm16',
+            input_audio_transcription: { model: 'whisper-1' }
           }
         }
         try {

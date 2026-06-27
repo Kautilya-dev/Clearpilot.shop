@@ -35,6 +35,7 @@ export default function CopilotScreen({
   onSubmit,
   listenMode,
   speakerLevel,
+  speakerDeviceName,
   speakerTranscript,
   listenError,
   onStartListening,
@@ -111,18 +112,28 @@ export default function CopilotScreen({
       <div className="border-t border-gray-200 px-8 py-4 shrink-0 space-y-2">
         <div className="flex items-center gap-2">
           {DEVICES.map((device) => {
-            const available = device.key === 'speaker'
+            // Speaker is implemented; Mic is coming soon. When any device is active,
+            // the other is disabled — only one device can be selected at a time.
+            const implemented = device.key === 'speaker'
             const active = listenMode === device.key
+            const blockedByOther = listenMode !== 'off' && !active
+            const disabled = !implemented || blockedByOther
             const Icon = device.icon
             return (
               <button
                 key={device.key}
                 type="button"
-                disabled={!available}
+                disabled={disabled}
                 onClick={() => (active ? onStopListening() : onStartListening(device.key))}
-                title={available ? `${active ? 'Stop' : 'Start'} ${device.label} listening` : `${device.label} - coming soon`}
+                title={
+                  !implemented
+                    ? `${device.label} - coming soon`
+                    : blockedByOther
+                      ? 'Stop the active device first'
+                      : `${active ? 'Stop' : 'Start'} ${device.label} listening`
+                }
                 className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border ${
-                  !available
+                  disabled
                     ? 'opacity-50 cursor-not-allowed border-gray-200 text-gray-400'
                     : active
                       ? 'border-purple-500 bg-purple-50 text-purple-700'
@@ -140,7 +151,7 @@ export default function CopilotScreen({
                 <div className="h-full bg-purple-500" style={{ width: `${Math.min(100, speakerLevel)}%` }} />
               </div>
               <span className="text-xs text-gray-400 truncate">
-                {speakerTranscript || 'Listening for the interviewer’s question...'}
+                {speakerTranscript || `Listening : ${speakerDeviceName || 'System Audio'}`}
               </span>
             </div>
           )}
