@@ -33,7 +33,6 @@ async def mint_ephemeral_token(instructions: str) -> dict:
                         "model": REALTIME_MODEL,
                         "instructions": instructions,
                         "output_modalities": ["text"],
-                        "audio": {"input": {"format": "audio/pcm"}},
                     },
                 },
             )
