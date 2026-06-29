@@ -10,8 +10,8 @@ import { useAudioCapture } from './hooks/useAudioCapture'
 const TABS = [
   { key: 'materials', label: 'Materials' },
   { key: 'qa', label: 'Q&A' },
-  { key: 'copilot', label: 'Copilot' }
-  // Job Mode tab hidden until full release — feature is built but not exposed
+  { key: 'copilot', label: 'Copilot' },
+  { key: 'judge', label: 'Job Mode' }
 ]
 
 function renderMarkdown(text) {
