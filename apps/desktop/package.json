@@ -15,12 +15,12 @@
     "appId": "com.clearpilot.desktop",
     "productName": "ClearPilot",
     "copyright": "Copyright © 2026 ClearPilot",
+    "electronVersion": "39.8.10",
     "nodeGypRebuild": false,
     "buildDependenciesFromSource": false,
     "npmRebuild": false,
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
-      "icon": "build/icon.ico"
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
     },
     "nsis": {
       "oneClick": false,

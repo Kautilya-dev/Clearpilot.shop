@@ -25,25 +25,123 @@
   </div>
 </header>
 
-<main class="max-w-2xl mx-auto px-6 py-20 text-center">
-  <div class="w-14 h-14 rounded-2xl bg-purple-50 flex items-center justify-center mx-auto mb-6">
-    <i data-lucide="monitor-down" class="w-7 h-7 text-purple-600"></i>
-  </div>
-  <h1 class="text-3xl font-semibold tracking-tight mb-3">ClearPilot Desktop</h1>
-  <p class="text-gray-500 mb-8">
-    The desktop interview copilot is in active development — Windows builds aren't published yet.
-    Create a web account now so it's ready to sign into the moment a build is out.
-  </p>
-  <div class="border border-gray-200 rounded-2xl p-6 inline-block text-left mb-8">
-    <div class="flex items-center gap-3 text-sm text-gray-600 mb-2">
-      <i data-lucide="circle-dashed" class="w-4 h-4 text-purple-500"></i>Windows — in development
+<main class="max-w-3xl mx-auto px-6 py-20">
+  <div class="text-center mb-14">
+    <div class="w-14 h-14 rounded-2xl bg-purple-50 flex items-center justify-center mx-auto mb-6">
+      <i data-lucide="monitor-down" class="w-7 h-7 text-purple-600"></i>
     </div>
-    <div class="flex items-center gap-3 text-sm text-gray-400">
-      <i data-lucide="circle-dashed" class="w-4 h-4"></i>macOS — not yet planned
+    <h1 class="text-3xl font-semibold tracking-tight mb-3">ClearPilot Desktop</h1>
+    <p class="text-gray-500 max-w-xl mx-auto">
+      Your private SAP CPI interview copilot. Listens to your interview audio in real-time
+      and surfaces answers — fully offline-capable once installed.
+    </p>
+  </div>
+
+  <!-- Platform cards -->
+  <div class="grid md:grid-cols-2 gap-4 mb-12">
+    <!-- Windows -->
+    <div class="border border-gray-200 rounded-2xl p-6">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+          <i data-lucide="monitor" class="w-5 h-5 text-blue-600"></i>
+        </div>
+        <div>
+          <p class="font-medium text-sm">Windows</p>
+          <p class="text-xs text-gray-400">10 / 11 &nbsp;·&nbsp; x64</p>
+        </div>
+        <span class="ml-auto text-xs font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded-full">v0.1.0</span>
+      </div>
+      <a
+        href="https://github.com/Kautilya-dev/Work/releases/latest/download/ClearPilot-Setup.exe"
+        class="flex items-center justify-center gap-2 w-full py-2.5 px-4 bg-purple-600 text-white text-sm font-medium rounded-xl hover:bg-purple-700 transition-colors"
+      >
+        <i data-lucide="download" class="w-4 h-4"></i>
+        Download .exe installer
+      </a>
+      <p class="text-xs text-gray-400 text-center mt-2">NSIS installer · ~120 MB</p>
+    </div>
+
+    <!-- Mac — coming soon -->
+    <div class="border border-dashed border-gray-200 rounded-2xl p-6 bg-gray-50">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+          <i data-lucide="laptop" class="w-5 h-5 text-gray-400"></i>
+        </div>
+        <div>
+          <p class="font-medium text-sm text-gray-500">macOS</p>
+          <p class="text-xs text-gray-400">Intel &amp; Apple Silicon</p>
+        </div>
+        <span class="ml-auto text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">Coming soon</span>
+      </div>
+      <div class="flex items-center justify-center gap-2 w-full py-2.5 px-4 bg-gray-100 text-gray-400 text-sm font-medium rounded-xl cursor-not-allowed select-none">
+        <i data-lucide="clock" class="w-4 h-4"></i>
+        Not yet available
+      </div>
+      <p class="text-xs text-gray-400 text-center mt-2">Mac support is planned for a future release</p>
     </div>
   </div>
-  <div>
-    <a href="/register" class="btn-primary">Create your account</a>
+
+  <!-- All releases link -->
+  <div class="text-center mb-14">
+    <a
+      href="https://github.com/Kautilya-dev/Work/releases"
+      target="_blank"
+      rel="noopener"
+      class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
+    >
+      <i data-lucide="git-branch" class="w-4 h-4"></i>
+      View all releases &amp; changelog on GitHub
+    </a>
+  </div>
+
+  <!-- How it works -->
+  <div class="border border-gray-100 rounded-2xl p-8 bg-gray-50 mb-8">
+    <h2 class="font-semibold mb-5">How to get started</h2>
+    <ol class="space-y-4">
+      <li class="flex gap-4">
+        <span class="w-6 h-6 rounded-full bg-purple-600 text-white text-xs flex items-center justify-center shrink-0 mt-0.5">1</span>
+        <div>
+          <p class="text-sm font-medium">Create a ClearPilot account</p>
+          <p class="text-xs text-gray-500 mt-0.5">Sign up at clearpilot.shop — you'll use the same login in the app.</p>
+        </div>
+      </li>
+      <li class="flex gap-4">
+        <span class="w-6 h-6 rounded-full bg-purple-600 text-white text-xs flex items-center justify-center shrink-0 mt-0.5">2</span>
+        <div>
+          <p class="text-sm font-medium">Install &amp; sign in</p>
+          <p class="text-xs text-gray-500 mt-0.5">Run the .exe installer, open ClearPilot, and log in with your account.</p>
+        </div>
+      </li>
+      <li class="flex gap-4">
+        <span class="w-6 h-6 rounded-full bg-purple-600 text-white text-xs flex items-center justify-center shrink-0 mt-0.5">3</span>
+        <div>
+          <p class="text-sm font-medium">Add your OpenAI API key</p>
+          <p class="text-xs text-gray-500 mt-0.5">Settings → OpenAI tab. The key is stored locally and never leaves your machine.</p>
+        </div>
+      </li>
+      <li class="flex gap-4">
+        <span class="w-6 h-6 rounded-full bg-purple-600 text-white text-xs flex items-center justify-center shrink-0 mt-0.5">4</span>
+        <div>
+          <p class="text-sm font-medium">Start your interview</p>
+          <p class="text-xs text-gray-500 mt-0.5">Pick an interview from your dashboard, hit Speaker or Mic, and ClearPilot listens live.</p>
+        </div>
+      </li>
+    </ol>
+  </div>
+
+  <!-- System requirements -->
+  <div class="text-sm">
+    <h3 class="font-medium text-xs uppercase tracking-wider text-gray-400 mb-2">Windows requirements</h3>
+    <ul class="space-y-1 text-gray-600 text-xs">
+      <li>Windows 10 or 11 (64-bit)</li>
+      <li>4 GB RAM minimum</li>
+      <li>Internet connection for AI features</li>
+      <li>OpenAI API key with Realtime API access</li>
+    </ul>
+  </div>
+
+  <div class="mt-10 text-center">
+    <a href="/register" class="btn-primary">Create your free account</a>
   </div>
 </main>
 
