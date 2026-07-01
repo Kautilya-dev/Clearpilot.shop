@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('clearpilot', {
   closeWindow: () => ipcRenderer.invoke('window:close'),
+  enterFocusMode: () => ipcRenderer.invoke('window:enterFocusMode'),
+  exitFocusMode: () => ipcRenderer.invoke('window:exitFocusMode'),
 
   openBrowserSignIn: () => ipcRenderer.invoke('auth:openBrowserSignIn'),
   getCurrentUser: () => ipcRenderer.invoke('auth:getCurrentUser'),

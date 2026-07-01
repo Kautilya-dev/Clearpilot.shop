@@ -73,6 +73,7 @@ export default function App() {
   const [waiting, setWaiting] = useState(false)
   const [error, setError] = useState('')
   const [selectedInterview, setSelectedInterview] = useState(null)
+  const [focusMode, setFocusMode] = useState(false)
 
   useEffect(() => {
     window.clearpilot.getCurrentUser().then((res) => {
@@ -119,6 +120,7 @@ export default function App() {
   function handleNavigate(key) {
     setSelectedInterview(null)
     setScreen(key)
+    setFocusMode(false) // leaving the workspace should never strand Sidebar/TitleBar hidden
   }
 
   function handleSelectInterview(interview) {
@@ -168,12 +170,19 @@ export default function App() {
 
   return (
     <div className="h-screen flex flex-col overflow-hidden font-sans">
-      <TitleBar />
+      {!focusMode && <TitleBar />}
       <div className="flex-1 flex overflow-hidden">
-        <Sidebar user={user} activeScreen={screen} onNavigate={handleNavigate} onLogout={handleLogout} />
+        {!focusMode && (
+          <Sidebar user={user} activeScreen={screen} onNavigate={handleNavigate} onLogout={handleLogout} />
+        )}
 
         {screen === 'workspace' && selectedInterview && (
-          <InterviewWorkspace interview={selectedInterview} onBack={() => handleNavigate('picker')} />
+          <InterviewWorkspace
+            interview={selectedInterview}
+            onBack={() => handleNavigate('picker')}
+            focusMode={focusMode}
+            onFocusModeChange={setFocusMode}
+          />
         )}
         {screen === 'picker' && <PickerScreen onSelectInterview={handleSelectInterview} />}
         {screen === 'history' && <HistoryScreen onSelectInterview={handleSelectInterview} />}

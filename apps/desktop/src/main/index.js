@@ -18,6 +18,12 @@ let micSession = null
 let speakerStopIntentional = false
 let micStopIntentional = false
 
+// Focus Mode shrinks the same window into a compact floating widget rather than opening a
+// second BrowserWindow - this remembers what bounds to restore on Dashboard-return. Always-on-top
+// is restored from the live persisted setting instead (see window:exitFocusMode) since the user
+// can change that preference from Focus Mode's own Settings panel.
+let priorBounds = null
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1000,
@@ -431,6 +437,29 @@ function registerIpcHandlers() {
     if (updates.window?.opacity !== undefined) mainWindow?.setOpacity(updates.window.opacity)
     if (updates.window?.alwaysOnTop !== undefined) mainWindow?.setAlwaysOnTop(updates.window.alwaysOnTop)
     return { success: true, settings }
+  })
+
+  // Focus Mode - shrink the existing window into a compact floating widget. Not a second
+  // BrowserWindow, so opacity/stealth/always-on-top toggles from Settings keep applying to it.
+  ipcMain.handle('window:enterFocusMode', () => {
+    if (!mainWindow) return { success: false }
+    if (priorBounds) return { success: true } // already compact - don't clobber the saved original bounds
+    priorBounds = mainWindow.getBounds()
+    mainWindow.setAlwaysOnTop(true) // forced on regardless of the user's Settings toggle
+    const { x, y } = priorBounds
+    mainWindow.setBounds({ x, y, width: 400, height: 560 })
+    return { success: true }
+  })
+
+  ipcMain.handle('window:exitFocusMode', () => {
+    if (!mainWindow) return { success: false }
+    if (priorBounds) mainWindow.setBounds(priorBounds)
+    // Read the live persisted preference, not an entry-time snapshot - the user can now change
+    // Always On Top from the Settings panel embedded inside Focus Mode itself, and that change
+    // should stick on exit rather than being reverted to whatever it was before Focus Mode opened.
+    mainWindow.setAlwaysOnTop(settingsStore.getAll().window.alwaysOnTop)
+    priorBounds = null
+    return { success: true }
   })
 
   // true when both sessions run together (Job Mode) — used to update mic instructions

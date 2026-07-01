@@ -29,7 +29,8 @@ export default function JudgeTab({
   micLevel,
   micDeviceName,
   jobCurrent,
-  jobRounds
+  jobRounds,
+  onFocusMode
 }) {
   const active = listenMode === 'both'
 
@@ -152,6 +153,13 @@ export default function JudgeTab({
             }`}
           >
             {active ? 'Stop Job Mode' : 'Start Job Mode'}
+          </button>
+
+          <button
+            onClick={onFocusMode}
+            className="text-sm px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:border-purple-300 hover:text-purple-600 font-medium"
+          >
+            Focus Mode
           </button>
 
           {active && (

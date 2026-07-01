@@ -5,6 +5,7 @@ import MaterialsTab from './MaterialsTab'
 import QATab from './QATab'
 import CopilotScreen from './CopilotScreen'
 import JudgeTab from './JudgeTab'
+import FocusWidget from './FocusWidget'
 import { useAudioCapture } from './hooks/useAudioCapture'
 
 const TABS = [
@@ -23,8 +24,13 @@ function renderMarkdown(text) {
 // stream and drive the same mic/speaker sessions, and only one place should own the
 // window.clearpilot.onChatEvent subscription (two independent subscribers would both have
 // to call offChatEvent's removeAllListeners on cleanup, which would silently kill the other).
-export default function InterviewWorkspace({ interview, onBack }) {
+// focusMode itself is owned by App.jsx (it also gates the Sidebar/TitleBar, which are
+// siblings of this component) and passed down as a prop rather than duplicated in local state -
+// two independent copies of the same boolean can desync (e.g. one side updates, the other
+// doesn't), leaving Sidebar/TitleBar hidden while this component renders its normal tab UI.
+export default function InterviewWorkspace({ interview, onBack, focusMode, onFocusModeChange }) {
   const [activeTab, setActiveTab] = useState('copilot')
+  const [focusSource, setFocusSource] = useState(null)
 
   const [history, setHistory] = useState([])
   const [historyLoading, setHistoryLoading] = useState(true)
@@ -41,10 +47,23 @@ export default function InterviewWorkspace({ interview, onBack }) {
   const [speakerTranscript, setSpeakerTranscript] = useState('')
   const [listenError, setListenError] = useState('')
 
-  // Job Mode round state — each round: { question, suggestion, response, feedback }
+  // Job Mode round state — each round: { id, question, suggestion, response, feedback }
   const jobCurrentRef = useRef({ question: '', suggestion: '', response: '' })
   const [jobCurrent, setJobCurrent] = useState({ question: '', suggestion: '', response: '', feedback: '' })
   const [jobRounds, setJobRounds] = useState([])
+  const roundIdRef = useRef(0) // stable ids so Focus Mode's pin feature survives new rounds shifting array positions
+  // Which Job Mode rounds are pinned in the Focus Mode widget - lifted here (not local to
+  // FocusWidget) so pins survive exiting and re-entering Focus Mode, not just remounts within it.
+  const [pinnedRoundIds, setPinnedRoundIds] = useState(() => new Set())
+
+  function toggleRoundPin(id) {
+    setPinnedRoundIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   // Load past conversation when entering the workspace so the user can continue
   // exactly where they left off. Entries arrive newest-first from the API.
@@ -145,6 +164,7 @@ export default function InterviewWorkspace({ interview, onBack }) {
         if (listenModeRef.current === 'both') {
           // Job Mode: mic GPT answer is the judge's feedback — finalize the round
           const round = {
+            id: ++roundIdRef.current,
             question: jobCurrentRef.current.question,
             suggestion: jobCurrentRef.current.suggestion,
             response: jobCurrentRef.current.response,
@@ -231,44 +251,63 @@ export default function InterviewWorkspace({ interview, onBack }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Focus Mode shrinks the window into a floating widget rather than opening a second
+  // BrowserWindow - InterviewWorkspace stays mounted underneath so the audio session above
+  // is never interrupted, and onFocusModeChange bubbles the flag up to App.jsx so it can hide
+  // the TitleBar/Sidebar, which are siblings of this component, not descendants.
+  async function enterFocusMode(source) {
+    setFocusSource(source)
+    onFocusModeChange?.(true)
+    await window.clearpilot.enterFocusMode()
+  }
+
+  async function exitFocusMode() {
+    await window.clearpilot.exitFocusMode()
+    onFocusModeChange?.(false)
+    setFocusSource(null)
+  }
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="border-b border-gray-200 px-8 pt-4 shrink-0">
-        <button onClick={onBack} className="text-xs text-gray-400 hover:text-gray-600 inline-flex items-center gap-1 mb-2">
-          &larr; All interviews
-        </button>
-        <h1 className="text-xl font-semibold tracking-tight">{interview.title}</h1>
-        <div className="flex items-center gap-1.5 flex-wrap mt-2 mb-3">
-          {interview.subjects.map((s) => (
-            <span key={s.id} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-              {s.name}
-            </span>
-          ))}
+      {!focusMode && (
+        <div className="border-b border-gray-200 px-8 pt-4 shrink-0">
+          <button onClick={onBack} className="text-xs text-gray-400 hover:text-gray-600 inline-flex items-center gap-1 mb-2">
+            &larr; All interviews
+          </button>
+          <h1 className="text-xl font-semibold tracking-tight">{interview.title}</h1>
+          <div className="flex items-center gap-1.5 flex-wrap mt-2 mb-3">
+            {interview.subjects.map((s) => (
+              <span key={s.id} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+                {s.name}
+              </span>
+            ))}
+          </div>
+          <div className="flex gap-1">
+            {TABS.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`text-sm px-3 py-1.5 rounded-lg ${
+                  activeTab === tab.key ? 'bg-purple-50 text-purple-700' : 'text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex gap-1">
-          {TABS.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`text-sm px-3 py-1.5 rounded-lg ${
-                activeTab === tab.key ? 'bg-purple-50 text-purple-700' : 'text-gray-500 hover:bg-gray-50'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      )}
 
-      {/* Rendered together (not conditionally mounted) so switching tabs doesn't lose an
-          in-progress Copilot conversation, a live listening session, or re-fetch Materials/Q&A lists every time. */}
-      <div className={activeTab === 'materials' ? 'contents' : 'hidden'}>
+      {/* Rendered together (not conditionally mounted) so switching tabs - or toggling Focus
+          Mode - doesn't lose an in-progress Copilot conversation, a live listening session, or
+          re-fetch Materials/Q&A lists every time. */}
+      <div className={!focusMode && activeTab === 'materials' ? 'contents' : 'hidden'}>
         <MaterialsTab interviewId={interview.id} />
       </div>
-      <div className={activeTab === 'qa' ? 'contents' : 'hidden'}>
+      <div className={!focusMode && activeTab === 'qa' ? 'contents' : 'hidden'}>
         <QATab interviewId={interview.id} />
       </div>
-      <div className={activeTab === 'copilot' ? 'contents' : 'hidden'}>
+      <div className={!focusMode && activeTab === 'copilot' ? 'contents' : 'hidden'}>
         <CopilotScreen
           history={history}
           historyLoading={historyLoading}
@@ -284,9 +323,10 @@ export default function InterviewWorkspace({ interview, onBack }) {
           listenError={listenError}
           onStartListening={startListening}
           onStopListening={stopListening}
+          onFocusMode={() => enterFocusMode('copilot')}
         />
       </div>
-      <div className={activeTab === 'judge' ? 'contents' : 'hidden'}>
+      <div className={!focusMode && activeTab === 'judge' ? 'contents' : 'hidden'}>
         <JudgeTab
           listenMode={listenMode}
           listenError={listenError}
@@ -298,8 +338,31 @@ export default function InterviewWorkspace({ interview, onBack }) {
           micDeviceName={audioCapture.micDeviceName}
           jobCurrent={jobCurrent}
           jobRounds={jobRounds}
+          onFocusMode={() => enterFocusMode('judge')}
         />
       </div>
+
+      {focusMode && (
+        <FocusWidget
+          source={focusSource}
+          onExit={exitFocusMode}
+          listenMode={listenMode}
+          listenError={listenError}
+          onStartListening={startListening}
+          onStopListening={stopListening}
+          speakerLevel={audioCapture.speakerLevel}
+          speakerDeviceName={audioCapture.speakerDeviceName}
+          micLevel={audioCapture.micLevel}
+          micDeviceName={audioCapture.micDeviceName}
+          streaming={streaming}
+          history={history}
+          speakerTranscript={speakerTranscript}
+          jobCurrent={jobCurrent}
+          jobRounds={jobRounds}
+          pinnedRoundIds={pinnedRoundIds}
+          onToggleRoundPin={toggleRoundPin}
+        />
+      )}
     </div>
   )
 }

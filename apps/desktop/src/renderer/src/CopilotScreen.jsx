@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Send, Mic, Volume2 } from 'lucide-react'
+import { Send, Mic, Volume2, Focus } from 'lucide-react'
 
 const DEVICES = [
   { key: 'mic', label: 'Mic', icon: Mic },
@@ -42,7 +42,8 @@ export default function CopilotScreen({
   speakerTranscript,
   listenError,
   onStartListening,
-  onStopListening
+  onStopListening,
+  onFocusMode
 }) {
   const [input, setInput] = useState('')
   const conversationRef = useRef(null)
@@ -117,6 +118,15 @@ export default function CopilotScreen({
 
       <div className="border-t border-gray-200 px-8 py-4 shrink-0 space-y-2">
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onFocusMode}
+            title="Enter Focus Mode"
+            className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:border-purple-300"
+          >
+            <Focus className="w-3.5 h-3.5" />
+            Focus
+          </button>
           {DEVICES.map((device) => {
             // Only one device active at a time in Copilot; Job Mode (both) is a separate tab.
             const implemented = true
