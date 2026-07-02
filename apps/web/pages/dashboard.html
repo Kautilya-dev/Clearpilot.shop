@@ -38,10 +38,12 @@
       <div id="create-form" class="border border-gray-200 rounded-2xl p-5 mb-6 hidden">
         <div id="create-error" class="alert-error mb-3 hidden"></div>
         <label class="text-xs font-medium text-gray-700 mb-1.5 block">Title</label>
-        <input id="create-title" type="text" class="field-input mb-4" placeholder="e.g. SAP CPI - Acme Corp" />
+        <input id="create-title" type="text" class="field-input mb-4" placeholder="e.g. SAP CPI - Acme Corp" list="subject-name-suggestions" />
+        <datalist id="subject-name-suggestions"></datalist>
         <label class="text-xs font-medium text-gray-700 mb-1.5 block">Subject(s) to ground this interview in</label>
         <p class="text-xs text-gray-400 mb-2.5">Pick one or more — combine subjects for cross-topic interviews.</p>
-        <div id="subject-cards" class="grid grid-cols-3 gap-3 mb-4">Loading subjects...</div>
+        <div id="subject-cards" class="grid grid-cols-3 gap-3 mb-3">Loading subjects...</div>
+        <p id="materials-caution" class="text-xs text-amber-600 mb-4 hidden"></p>
         <div class="flex gap-2">
           <button id="create-save" class="btn-primary text-sm">Create interview</button>
           <button id="create-cancel" class="btn-secondary text-sm">Cancel</button>
@@ -58,6 +60,10 @@
   if (!requireAuthOrRedirect()) { /* redirected */ }
 
   let selectedSubjectIds = new Set();
+  let loadedSubjects = [];
+  // True once the user has typed their own text - auto-fill from selected subjects stops
+  // touching the field after that, and resumes if they clear it back to empty.
+  let titleTouched = false;
 
   const STATE_STYLES = {
     active: 'bg-purple-50 text-purple-700',
@@ -65,35 +71,84 @@
     archived: 'bg-gray-100 text-gray-500',
   };
 
+  // Turns ["Python", "React"] into "Python & React Interview", ["Python"] into "Python Interview",
+  // and 3+ into "Python, React & Graphic Designing Interview".
+  function generateInterviewTitle(subjectNames) {
+    if (subjectNames.length === 0) return '';
+    if (subjectNames.length === 1) return `${subjectNames[0]} Interview`;
+    const last = subjectNames[subjectNames.length - 1];
+    const rest = subjectNames.slice(0, -1);
+    return `${rest.join(', ')} & ${last} Interview`;
+  }
+
+  function updateTitleSuggestion() {
+    if (titleTouched) return;
+    const names = loadedSubjects.filter(s => selectedSubjectIds.has(s.id)).map(s => s.name);
+    document.getElementById('create-title').value = generateInterviewTitle(names);
+  }
+
+  function updateMaterialsCaution() {
+    const needsMaterialsNames = loadedSubjects
+      .filter(s => selectedSubjectIds.has(s.id) && s.status !== 'available')
+      .map(s => s.name);
+    const box = document.getElementById('materials-caution');
+    if (needsMaterialsNames.length === 0) {
+      box.classList.add('hidden');
+      return;
+    }
+    box.textContent = `No context available based on your materials for: ${needsMaterialsNames.join(', ')}. Answers will rely on general knowledge and this interview's own materials and Q&A.`;
+    box.classList.remove('hidden');
+  }
+
+  // All subjects are selectable, including ones with no ingested grounding corpus yet
+  // (status !== 'available') - those just get a caution instead of being blocked, since
+  // answers for them still work fine (general model knowledge + this interview's own
+  // materials/Q&A), they just aren't grounded in a shared document corpus.
   async function loadSubjectCards() {
     const token = getToken();
     const res = await fetch('/api/subjects', { headers: { Authorization: `Bearer ${token}` } });
-    const subjects = res.ok ? await res.json() : [];
+    loadedSubjects = res.ok ? await res.json() : [];
+
+    document.getElementById('subject-name-suggestions').innerHTML =
+      loadedSubjects.map(s => `<option value="${s.name}"></option>`).join('');
 
     const el = document.getElementById('subject-cards');
-    el.innerHTML = subjects.map(s => `
-      <button type="button" data-subject-id="${s.id}" ${s.status !== 'available' ? 'disabled' : ''}
-        class="subject-card text-left border rounded-xl p-3 transition ${s.status !== 'available' ? 'opacity-50 cursor-not-allowed border-gray-100' : 'border-gray-200 hover:border-purple-300 cursor-pointer'}">
+    el.innerHTML = loadedSubjects.map(s => {
+      const needsMaterials = s.status !== 'available';
+      return `
+      <button type="button" data-subject-id="${s.id}" data-needs-materials="${needsMaterials}"
+        class="subject-card text-left border rounded-xl p-3 transition border-gray-200 hover:border-purple-300 cursor-pointer">
         <p class="text-sm font-medium">${s.name}</p>
-        <p class="text-xs text-gray-400 mt-0.5">${s.status === 'available' ? 'Available' : 'Coming soon'}</p>
+        <p class="text-xs mt-0.5 ${needsMaterials ? 'text-amber-500' : 'text-gray-400'}">${needsMaterials ? '⚠ No materials' : 'Available'}</p>
       </button>
-    `).join('');
+    `;
+    }).join('');
 
-    el.querySelectorAll('.subject-card:not([disabled])').forEach(card => {
+    el.querySelectorAll('.subject-card').forEach(card => {
       card.addEventListener('click', () => {
         const id = card.dataset.subjectId;
+        const needsMaterials = card.dataset.needsMaterials === 'true';
+        const selectedClasses = needsMaterials
+          ? ['border-amber-400', 'bg-amber-50']
+          : ['border-purple-600', 'bg-purple-50'];
         if (selectedSubjectIds.has(id)) {
           selectedSubjectIds.delete(id);
-          card.classList.remove('border-purple-600', 'bg-purple-50');
+          card.classList.remove(...selectedClasses);
           card.classList.add('border-gray-200');
         } else {
           selectedSubjectIds.add(id);
           card.classList.remove('border-gray-200');
-          card.classList.add('border-purple-600', 'bg-purple-50');
+          card.classList.add(...selectedClasses);
         }
+        updateTitleSuggestion();
+        updateMaterialsCaution();
       });
     });
   }
+
+  document.getElementById('create-title').addEventListener('input', (e) => {
+    titleTouched = e.target.value.trim().length > 0;
+  });
 
   async function loadInterviews() {
     const token = getToken();
@@ -139,7 +194,9 @@
   document.getElementById('create-cancel').addEventListener('click', () => {
     document.getElementById('create-form').classList.add('hidden');
     document.getElementById('create-title').value = '';
+    titleTouched = false;
     selectedSubjectIds = new Set();
+    document.getElementById('materials-caution').classList.add('hidden');
   });
 
   document.getElementById('create-save').addEventListener('click', async () => {
