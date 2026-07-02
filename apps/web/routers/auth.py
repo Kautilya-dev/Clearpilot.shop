@@ -34,6 +34,8 @@ class UserResponse(BaseModel):
     id: str
     email: str
     display_name: str
+    answer_format_mode: str
+    answer_length: str
 
 
 async def get_current_user(
@@ -115,7 +117,10 @@ async def desktop_exchange(body: DesktopExchangeRequest, db: AsyncSession = Depe
 
 @router.get("/me", response_model=UserResponse)
 async def me(current_user: User = Depends(get_current_user)):
-    return UserResponse(id=str(current_user.id), email=current_user.email, display_name=current_user.display_name)
+    return UserResponse(
+        id=str(current_user.id), email=current_user.email, display_name=current_user.display_name,
+        answer_format_mode=current_user.answer_format_mode, answer_length=current_user.answer_length,
+    )
 
 
 class UpdateProfileRequest(BaseModel):
@@ -129,7 +134,35 @@ async def update_profile(
     current_user.display_name = body.display_name
     await db.commit()
     await db.refresh(current_user)
-    return UserResponse(id=str(current_user.id), email=current_user.email, display_name=current_user.display_name)
+    return UserResponse(
+        id=str(current_user.id), email=current_user.email, display_name=current_user.display_name,
+        answer_format_mode=current_user.answer_format_mode, answer_length=current_user.answer_length,
+    )
+
+
+class UpdatePreferencesRequest(BaseModel):
+    answer_format_mode: str
+    answer_length: str
+
+
+@router.patch("/me/preferences", response_model=UserResponse)
+async def update_preferences(
+    body: UpdatePreferencesRequest, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+):
+    valid_modes = {"bullets", "star", "concise", "detailed"}
+    valid_lengths = {"short", "medium", "long"}
+    if body.answer_format_mode not in valid_modes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid answer_format_mode")
+    if body.answer_length not in valid_lengths:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid answer_length")
+    current_user.answer_format_mode = body.answer_format_mode
+    current_user.answer_length = body.answer_length
+    await db.commit()
+    await db.refresh(current_user)
+    return UserResponse(
+        id=str(current_user.id), email=current_user.email, display_name=current_user.display_name,
+        answer_format_mode=current_user.answer_format_mode, answer_length=current_user.answer_length,
+    )
 
 
 class ChangePasswordRequest(BaseModel):

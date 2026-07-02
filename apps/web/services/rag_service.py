@@ -78,8 +78,32 @@ async def get_active_material(db: AsyncSession, interview_id: UUID, material_typ
     )
 
 
+FORMAT_MODE_INSTRUCTIONS = {
+    "bullets": "Structure the answer as short bullet points covering the key ideas.",
+    "star": "Structure the answer using the STAR method: Situation, Task, Action, Result, labelling each part.",
+    "concise": "Give a single, direct one-sentence answer with no elaboration.",
+    "detailed": "Give a fuller explanation, including the reasoning and a concrete code or configuration example where relevant.",
+}
+ANSWER_LENGTH_INSTRUCTIONS = {
+    "short": "Keep it to no more than 3 sentences or bullet points total.",
+    "medium": "Keep it to roughly 4-6 sentences or bullet points total.",
+    "long": "Use roughly 8-10 sentences or bullet points, going into more depth than usual.",
+}
+
+
+def build_answer_template_instruction(answer_format_mode: str, answer_length: str) -> str:
+    mode = FORMAT_MODE_INSTRUCTIONS.get(answer_format_mode, FORMAT_MODE_INSTRUCTIONS["bullets"])
+    length = ANSWER_LENGTH_INSTRUCTIONS.get(answer_length, ANSWER_LENGTH_INSTRUCTIONS["medium"])
+    return f"{mode} {length}"
+
+
 def build_system_prompt(
-    resume: Material | None, jd: Material | None, scenario: Material | None, doc_chunks: list[RetrievedChunk]
+    resume: Material | None,
+    jd: Material | None,
+    scenario: Material | None,
+    doc_chunks: list[RetrievedChunk],
+    answer_format_mode: str = "bullets",
+    answer_length: str = "medium",
 ) -> str:
     resume_section = f"\nCANDIDATE'S RESUME:\n{resume.text}\n" if resume else ""
     jd_section = f"\nTARGET ROLE (job description):\n{jd.text}\n" if jd else ""
@@ -90,8 +114,15 @@ def build_system_prompt(
     else:
         doc_context = "(No matching reference material was found for this question.)"
 
-    return SYSTEM_PROMPT_TEMPLATE.format(
+    prompt = SYSTEM_PROMPT_TEMPLATE.format(
         resume_section=resume_section, jd_section=jd_section, scenario_section=scenario_section, doc_context=doc_context
+    )
+    # This overrides rule 4's general "prefer longer, complete answers" guidance above -
+    # without saying so explicitly, a "concise"/"short" preference would conflict with it.
+    template_instruction = build_answer_template_instruction(answer_format_mode, answer_length)
+    return (
+        f"{prompt}\n\nANSWER TEMPLATE (follow this instead of the general length guidance above):\n"
+        f"{template_instruction}"
     )
 
 

@@ -15,6 +15,10 @@ class User(Base):
     email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String, nullable=False)
     display_name: Mapped[str] = mapped_column(String, nullable=False)
+    # Shapes every AI-generated interview answer (web Copilot chat + desktop text/voice
+    # Copilot + Job Mode's suggested answer) - not applied to Job Mode's coach/judge feedback.
+    answer_format_mode: Mapped[str] = mapped_column(String, nullable=False, default="bullets")
+    answer_length: Mapped[str] = mapped_column(String, nullable=False, default="medium")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 

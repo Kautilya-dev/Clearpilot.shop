@@ -112,6 +112,16 @@ async function updateProfile(token, displayName) {
   return res.json()
 }
 
+async function updatePreferences(token, answerFormatMode, answerLength) {
+  const res = await fetch(`${BASE_URL}/api/auth/me/preferences`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ answer_format_mode: answerFormatMode, answer_length: answerLength })
+  })
+  if (!res.ok) throw new Error(await parseErrorDetail(res))
+  return res.json()
+}
+
 async function changePassword(token, currentPassword, newPassword) {
   const res = await fetch(`${BASE_URL}/api/auth/change-password`, {
     method: 'POST',
@@ -280,6 +290,7 @@ module.exports = {
   desktopExchange,
   getCurrentUser,
   updateProfile,
+  updatePreferences,
   changePassword,
   deleteAccount,
   listInterviews,

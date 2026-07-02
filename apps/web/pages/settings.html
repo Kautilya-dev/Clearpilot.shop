@@ -42,6 +42,27 @@
       </section>
 
       <section class="border border-gray-200 rounded-2xl p-5">
+        <p class="text-sm font-semibold mb-4">Answer Template</p>
+        <p class="text-xs text-gray-500 mb-4">Shapes every AI-generated interview answer, on the web and in the desktop app (Copilot and Job Mode's suggested answer).</p>
+        <div id="template-error" class="alert-error mb-3 hidden"></div>
+        <div id="template-success" class="alert-success mb-3 hidden"></div>
+        <label class="text-xs font-medium text-gray-700 mb-1.5 block">Format</label>
+        <select id="answer-format-mode" class="field-input mb-3">
+          <option value="bullets">Bullets</option>
+          <option value="star">STAR (Situation/Task/Action/Result)</option>
+          <option value="concise">Concise (one-liner)</option>
+          <option value="detailed">Detailed (with examples)</option>
+        </select>
+        <label class="text-xs font-medium text-gray-700 mb-1.5 block">Length</label>
+        <select id="answer-length" class="field-input mb-3">
+          <option value="short">Short</option>
+          <option value="medium">Medium</option>
+          <option value="long">Long</option>
+        </select>
+        <button id="template-save" class="btn-primary text-sm">Save</button>
+      </section>
+
+      <section class="border border-gray-200 rounded-2xl p-5">
         <p class="text-sm font-semibold mb-4">Change password</p>
         <div id="password-error" class="alert-error mb-3 hidden"></div>
         <div id="password-success" class="alert-success mb-3 hidden"></div>
@@ -70,6 +91,8 @@
     if (!user) return;
     document.getElementById('profile-name').value = user.display_name;
     document.getElementById('profile-email').textContent = user.email;
+    document.getElementById('answer-format-mode').value = user.answer_format_mode;
+    document.getElementById('answer-length').value = user.answer_length;
   })();
 
   document.getElementById('profile-save').addEventListener('click', async () => {
@@ -83,6 +106,31 @@
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ display_name: document.getElementById('profile-name').value.trim() }),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      errorBox.textContent = data.detail || 'Something went wrong.';
+      errorBox.classList.remove('hidden');
+      return;
+    }
+    successBox.textContent = 'Saved.';
+    successBox.classList.remove('hidden');
+  });
+
+  document.getElementById('template-save').addEventListener('click', async () => {
+    const errorBox = document.getElementById('template-error');
+    const successBox = document.getElementById('template-success');
+    errorBox.classList.add('hidden');
+    successBox.classList.add('hidden');
+
+    const token = getToken();
+    const res = await fetch('/api/auth/me/preferences', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        answer_format_mode: document.getElementById('answer-format-mode').value,
+        answer_length: document.getElementById('answer-length').value,
+      }),
     });
     if (!res.ok) {
       const data = await res.json();

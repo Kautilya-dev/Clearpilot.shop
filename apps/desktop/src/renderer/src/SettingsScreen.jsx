@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
 import AccountTab from './AccountTab'
+import AnswerTemplateTab from './AnswerTemplateTab'
 import StylingTab from './StylingTab'
 import BehaviourTab from './BehaviourTab'
 
 const TABS = [
   { key: 'account', label: 'Account' },
+  { key: 'template', label: 'Answer Template' },
   { key: 'openai', label: 'OpenAI' },
   { key: 'styling', label: 'Styling' },
   { key: 'behaviour', label: 'Behaviour' }
@@ -86,6 +88,7 @@ export default function SettingsScreen({ user, onProfileUpdated, onAccountDelete
         {activeTab === 'account' && (
           <AccountTab user={user} onProfileUpdated={onProfileUpdated} onAccountDeleted={onAccountDeleted} />
         )}
+        {activeTab === 'template' && <AnswerTemplateTab user={user} onProfileUpdated={onProfileUpdated} />}
         {activeTab === 'openai' && <OpenAITab />}
         {activeTab === 'styling' && <StylingTab />}
         {activeTab === 'behaviour' && <BehaviourTab />}

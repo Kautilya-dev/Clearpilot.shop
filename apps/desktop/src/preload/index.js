@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('clearpilot', {
   },
 
   updateProfile: (displayName) => ipcRenderer.invoke('profile:update', { displayName }),
+  updatePreferences: (answerFormatMode, answerLength) =>
+    ipcRenderer.invoke('preferences:update', { answerFormatMode, answerLength }),
   changePassword: (currentPassword, newPassword) =>
     ipcRenderer.invoke('auth:changePassword', { currentPassword, newPassword }),
   deleteAccount: () => ipcRenderer.invoke('auth:deleteAccount'),

@@ -45,6 +45,11 @@ async def ask(
     question = body.question
     interview_id = interview.id
     user_id = current_user.id
+    # Captured as plain strings now, not read off current_user inside stream() - that ORM
+    # object is bound to this request-scoped db session, which FastAPI tears down before
+    # the streamed body finishes (same reason stream() opens its own stream_db below).
+    answer_format_mode = current_user.answer_format_mode
+    answer_length = current_user.answer_length
 
     # A keyword candidate from the Q&A bank, if any - not a final decision. Whether it's
     # actually used gets judged inside stream() once resume/JD/scenario are loaded, since
@@ -84,7 +89,7 @@ async def ask(
             if not used_qa_bank:
                 subject_ids = await get_interview_subject_ids(stream_db, interview_id)
                 doc_chunks = await retrieve_relevant_docs(stream_db, question, subject_ids)
-                system_prompt = build_system_prompt(resume, jd, scenario, doc_chunks)
+                system_prompt = build_system_prompt(resume, jd, scenario, doc_chunks, answer_format_mode, answer_length)
                 sources_payload = [{"title": c.title, "breadcrumb": c.breadcrumb} for c in doc_chunks]
 
                 try:

@@ -177,6 +177,18 @@ function registerIpcHandlers() {
     }
   })
 
+  ipcMain.handle('preferences:update', async (event, { answerFormatMode, answerLength }) => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      const user = await apiClient.updatePreferences(token, answerFormatMode, answerLength)
+      authStore.setSession(token, user)
+      return { success: true, user }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
   ipcMain.handle('auth:changePassword', async (event, { currentPassword, newPassword }) => {
     const token = authStore.getCachedToken()
     if (!token) return { success: false, error: 'Not signed in' }
@@ -466,11 +478,35 @@ function registerIpcHandlers() {
   // with the speaker's suggestion so the judge has context.
   let isJobMode = false
 
-  const SAP_INSTRUCTIONS =
-    'You are an expert SAP CPI (Cloud Integration) interview assistant. ' +
-    "Listen to the interviewer's question and respond with a clear, concise, accurate answer. " +
-    'Focus on SAP Integration Suite, CPI iFlows, adapters, mappings, security, and best practices. ' +
-    'Keep answers under 5 sentences unless a detailed explanation is needed.'
+  // Answer Template preference (account-level, shared with the web app) - shapes the
+  // generated ANSWER only. Deliberately not applied to JUDGE_INITIAL_INSTRUCTIONS /
+  // judgeInstructionsWithSuggestion below, which are coaching commentary, not an answer.
+  const FORMAT_MODE_INSTRUCTIONS = {
+    bullets: 'Structure the answer as short bullet points covering the key ideas.',
+    star: 'Structure the answer using the STAR method: Situation, Task, Action, Result, labelling each part.',
+    concise: 'Give a single, direct one-sentence answer with no elaboration.',
+    detailed: 'Give a fuller explanation, including the reasoning and a concrete code or configuration example where relevant.'
+  }
+  const ANSWER_LENGTH_INSTRUCTIONS = {
+    short: 'Keep it to no more than 3 sentences or bullet points total.',
+    medium: 'Keep it to roughly 4-6 sentences or bullet points total.',
+    long: 'Use roughly 8-10 sentences or bullet points, going into more depth than usual.'
+  }
+
+  function buildAnswerTemplateInstruction(answerFormatMode, answerLength) {
+    const mode = FORMAT_MODE_INSTRUCTIONS[answerFormatMode] || FORMAT_MODE_INSTRUCTIONS.bullets
+    const length = ANSWER_LENGTH_INSTRUCTIONS[answerLength] || ANSWER_LENGTH_INSTRUCTIONS.medium
+    return `${mode} ${length}`
+  }
+
+  function buildSapInstructions(answerFormatMode, answerLength) {
+    return (
+      'You are an expert SAP CPI (Cloud Integration) interview assistant. ' +
+      "Listen to the interviewer's question and respond with a clear, concise, accurate answer. " +
+      'Focus on SAP Integration Suite, CPI iFlows, adapters, mappings, security, and best practices. ' +
+      buildAnswerTemplateInstruction(answerFormatMode, answerLength)
+    )
+  }
 
   const JUDGE_INITIAL_INSTRUCTIONS =
     'You are an interview coach in Job Mode. Listen to what the candidate says. ' +
@@ -527,11 +563,18 @@ function registerIpcHandlers() {
   }
 
   async function startListeningSession(interviewId, source) {
+    // Fetched fresh (not from authStore's cached user) so a preference change made moments
+    // ago on the web app - or on this app's own Settings without restarting - is honored
+    // immediately. Session starts aren't a hot path, so the extra round-trip is cheap.
+    const token = authStore.getCachedToken()
+    const user = token ? await apiClient.getCurrentUser(token).catch(() => null) : null
+    const sapInstructions = buildSapInstructions(user?.answer_format_mode || 'bullets', user?.answer_length || 'medium')
+
     if (source === 'both') {
       isJobMode = true
       // Start both sessions concurrently — speaker as SAP assistant, mic as judge
       const [sr, mr] = await Promise.all([
-        startSingleSession(interviewId, 'speaker', SAP_INSTRUCTIONS),
+        startSingleSession(interviewId, 'speaker', sapInstructions),
         startSingleSession(interviewId, 'mic', JUDGE_INITIAL_INSTRUCTIONS)
       ])
       if (!sr.success) return sr
@@ -539,7 +582,7 @@ function registerIpcHandlers() {
       return { success: true }
     }
     isJobMode = false
-    const instructions = source === 'speaker' ? SAP_INSTRUCTIONS : JUDGE_INITIAL_INSTRUCTIONS
+    const instructions = source === 'speaker' ? sapInstructions : JUDGE_INITIAL_INSTRUCTIONS
     return startSingleSession(interviewId, source, instructions)
   }
 
