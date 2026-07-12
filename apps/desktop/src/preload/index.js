@@ -70,6 +70,25 @@ contextBridge.exposeInMainWorld('clearpilot', {
     ipcRenderer.removeAllListeners('listening:error')
   },
 
+  // Practice Partner mode - reuses startListening/stopListening above with source: 'partner';
+  // these are just the extra events/calls specific to that mode.
+  savePracticeRound: (interviewId, partnerAnswer, yourResponse, coachFeedback) =>
+    ipcRenderer.invoke('practice:saveRound', { interviewId, partnerAnswer, yourResponse, coachFeedback }),
+  onPracticeTranscript: (callback) => {
+    ipcRenderer.on('practice:transcript', (event, data) => callback(data))
+  },
+  onPracticeGuestStatus: (callback) => {
+    ipcRenderer.on('practice:guestStatus', (event, data) => callback(data))
+  },
+  onPracticeError: (callback) => {
+    ipcRenderer.on('practice:relayError', (event, data) => callback(data))
+  },
+  offPracticeEvents: () => {
+    ipcRenderer.removeAllListeners('practice:transcript')
+    ipcRenderer.removeAllListeners('practice:guestStatus')
+    ipcRenderer.removeAllListeners('practice:relayError')
+  },
+
   listMaterials: (interviewId) => ipcRenderer.invoke('materials:list', { interviewId }),
   createMaterial: (interviewId, type, name, text) =>
     ipcRenderer.invoke('materials:create', { interviewId, type, name, text }),

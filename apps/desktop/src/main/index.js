@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, shell, session, desktopCapturer } = require('electron')
 const http = require('http')
 const path = require('path')
+const WebSocket = require('ws')
 const StealthManager = require('../modules/stealthManager')
 const authStore = require('./auth-store')
 const apiClient = require('./api-client')
@@ -17,6 +18,18 @@ let speakerSession = null
 let micSession = null
 let speakerStopIntentional = false
 let micStopIntentional = false
+
+// Practice Partner mode: a second person, on their own Desktop/web client logged into the
+// same account, speaks the answer instead of the AI. practiceRelay is a `ws` client to the
+// backend's Redis-Pub/Sub relay (apps/web/routers/practice.py), keyed by interview_id - no
+// join code needed since pairing is implicit (same account, same interview). isPartnerMode
+// gates the speaker-answer-callback injection inside registerIpcHandlers so the AI's own
+// generated answer doesn't overwrite the judge's reference once a real partner is providing
+// it - kept as module-level state (like speakerSession/micSession above) even though the
+// functions that use it live inside registerIpcHandlers, where judgeInstructionsWithSuggestion
+// is in scope.
+let practiceRelay = null
+let isPartnerMode = false
 
 // Focus Mode shrinks the same window into a compact floating widget rather than opening a
 // second BrowserWindow - this remembers what bounds to restore on Dashboard-return. Always-on-top
@@ -482,15 +495,15 @@ function registerIpcHandlers() {
   // generated ANSWER only. Deliberately not applied to JUDGE_INITIAL_INSTRUCTIONS /
   // judgeInstructionsWithSuggestion below, which are coaching commentary, not an answer.
   const FORMAT_MODE_INSTRUCTIONS = {
-    bullets: 'Structure the answer as short bullet points covering the key ideas.',
-    star: 'Structure the answer using the STAR method: Situation, Task, Action, Result, labelling each part.',
+    bullets: 'Structure the answer as bullet points covering the key ideas - each bullet that introduces a **bolded** term should also unpack it with a brief example.',
+    star: 'Structure the answer using the STAR method: Situation, Task, Action, Result, labelling each part - flesh each part out with specifics rather than one-line summaries.',
     concise: 'Give a single, direct one-sentence answer with no elaboration.',
-    detailed: 'Give a fuller explanation, including the reasoning and a concrete code or configuration example where relevant.'
+    detailed: "Give a fuller, elaborate explanation: walk through the reasoning and configuration steps in depth, and for every **bolded** key term include a concrete code/configuration example or worked mini-scenario right where it's introduced, not just a definition."
   }
   const ANSWER_LENGTH_INSTRUCTIONS = {
     short: 'Keep it to no more than 3 sentences or bullet points total.',
     medium: 'Keep it to roughly 4-6 sentences or bullet points total.',
-    long: 'Use roughly 8-10 sentences or bullet points, going into more depth than usual.'
+    long: 'Go long and thorough - roughly 10-15 sentences or bullet points, covering the reasoning, a worked example, and any relevant edge case or gotcha, so the candidate has enough material to speak on this for a couple of minutes if the interviewer asks them to elaborate.'
   }
 
   function buildAnswerTemplateInstruction(answerFormatMode, answerLength) {
@@ -502,8 +515,9 @@ function registerIpcHandlers() {
   function buildSapInstructions(answerFormatMode, answerLength) {
     return (
       'You are an expert SAP CPI (Cloud Integration) interview assistant. ' +
-      "Listen to the interviewer's question and respond with a clear, concise, accurate answer. " +
+      "Listen to the interviewer's question and respond with a clear, accurate answer. " +
       'Focus on SAP Integration Suite, CPI iFlows, adapters, mappings, security, and best practices. ' +
+      'Whenever you **bold** a key term, immediately follow it with a short concrete example or plain-language explanation of what it means in practice, so the candidate could explain it unprompted if the interviewer digs in. ' +
       buildAnswerTemplateInstruction(answerFormatMode, answerLength)
     )
   }
@@ -520,6 +534,50 @@ function registerIpcHandlers() {
     )
   }
 
+  function wsUrl(urlPath) {
+    return apiClient.BASE_URL.replace(/^http/, 'ws') + urlPath
+  }
+
+  // Practice Partner mode's "host" (candidate) side - connects to the backend relay that
+  // apps/web/pages/interview.html's Prompter tab (the "guest") also connects to, keyed by
+  // interview_id so no join code is needed (same account owns both sides).
+  function connectPracticeRelay(interviewId, token) {
+    const url = `${wsUrl('/api/practice-relay/ws')}?interview_id=${interviewId}&role=host&token=${encodeURIComponent(token)}`
+    console.log('[practice] connecting to relay:', url.replace(/token=[^&]+/, 'token=***'))
+    practiceRelay = new WebSocket(url)
+    practiceRelay.on('open', () => console.log('[practice] relay connected'))
+    practiceRelay.on('close', (code) => console.log('[practice] relay closed, code:', code))
+    practiceRelay.on('message', (data) => {
+      let payload
+      try {
+        payload = JSON.parse(data.toString())
+      } catch {
+        return
+      }
+      console.log('[practice] received:', payload.type, payload.text ? `"${payload.text}"` : '')
+      if (payload.type === 'transcript_final' && payload.text) {
+        mainWindow?.webContents.send('practice:transcript', { text: payload.text })
+        // Same injection point the AI-generated speaker suggestion uses below - the judge
+        // session doesn't need to know whether the "ideal answer" came from the AI or a
+        // real partner speaking it in the web app's Prompter tab.
+        if (micSession) micSession.updateInstructions(judgeInstructionsWithSuggestion(payload.text))
+      } else if (payload.type === 'guest_joined') {
+        mainWindow?.webContents.send('practice:guestStatus', { connected: true })
+      } else if (payload.type === 'guest_left') {
+        mainWindow?.webContents.send('practice:guestStatus', { connected: false })
+      }
+    })
+    practiceRelay.on('error', (error) => {
+      console.error('[practice] relay error:', error.message)
+      mainWindow?.webContents.send('practice:relayError', { message: error.message })
+    })
+  }
+
+  function disconnectPracticeRelay() {
+    practiceRelay?.close()
+    practiceRelay = null
+  }
+
   async function startSingleSession(interviewId, source, instructions, isRetry = false) {
     const apiKey = settingsStore.getAll().openai?.apiKey
     if (!apiKey) return { success: false, error: 'OpenAI API key not set. Add it in Settings.' }
@@ -531,8 +589,11 @@ function registerIpcHandlers() {
       manager.setAnswerCallback((text) => {
         mainWindow?.webContents.send('listening:answer', { source, text })
         // Job Mode: when speaker GPT answers, inject that suggestion into the mic judge session
-        // so it has context when the candidate speaks.
-        if (isJobMode && source === 'speaker' && micSession) {
+        // so it has context when the candidate speaks. Skipped in Practice Partner mode - the
+        // speaker session still runs (for the interviewer-question transcript/context above),
+        // but the judge's reference answer comes from the relayed partner instead (see
+        // connectPracticeRelay's 'transcript_final' handler, which calls updateInstructions itself).
+        if (isJobMode && !isPartnerMode && source === 'speaker' && micSession) {
           micSession.updateInstructions(judgeInstructionsWithSuggestion(text))
         }
       })
@@ -570,18 +631,23 @@ function registerIpcHandlers() {
     const user = token ? await apiClient.getCurrentUser(token).catch(() => null) : null
     const sapInstructions = buildSapInstructions(user?.answer_format_mode || 'bullets', user?.answer_length || 'medium')
 
-    if (source === 'both') {
+    if (source === 'both' || source === 'partner') {
       isJobMode = true
-      // Start both sessions concurrently — speaker as SAP assistant, mic as judge
+      isPartnerMode = source === 'partner'
+      // Start both sessions concurrently — speaker as SAP assistant (or, in partner mode,
+      // just for interviewer-question transcript/context - see the gated injection above),
+      // mic as judge
       const [sr, mr] = await Promise.all([
         startSingleSession(interviewId, 'speaker', sapInstructions),
         startSingleSession(interviewId, 'mic', JUDGE_INITIAL_INSTRUCTIONS)
       ])
       if (!sr.success) return sr
       if (!mr.success) return mr
+      if (isPartnerMode && token) connectPracticeRelay(interviewId, token)
       return { success: true }
     }
     isJobMode = false
+    isPartnerMode = false
     const instructions = source === 'speaker' ? sapInstructions : JUDGE_INITIAL_INSTRUCTIONS
     return startSingleSession(interviewId, source, instructions)
   }
@@ -591,18 +657,33 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle('listening:stop', async (event, { source }) => {
-    if (source === 'speaker' || source === 'both') {
+    if (source === 'speaker' || source === 'both' || source === 'partner') {
       speakerStopIntentional = true
       speakerSession?.disconnect()
       speakerSession = null
     }
-    if (source === 'mic' || source === 'both') {
+    if (source === 'mic' || source === 'both' || source === 'partner') {
       micStopIntentional = true
       micSession?.disconnect()
       micSession = null
     }
-    if (source === 'both') isJobMode = false
+    if (source === 'both' || source === 'partner') {
+      isJobMode = false
+      isPartnerMode = false
+      disconnectPracticeRelay()
+    }
     return { success: true }
+  })
+
+  ipcMain.handle('practice:saveRound', async (event, { interviewId, partnerAnswer, yourResponse, coachFeedback }) => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      const entry = await apiClient.savePracticeHistoryEntry(token, interviewId, { partnerAnswer, yourResponse, coachFeedback })
+      return { success: true, entry }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
   })
 
   ipcMain.handle('listening:audioChunk', async (event, { source, base64Data }) => {

@@ -243,6 +243,16 @@ async function deleteQa(token, interviewId, entryId) {
   if (!res.ok) throw new Error(await parseErrorDetail(res))
 }
 
+async function savePracticeHistoryEntry(token, interviewId, { partnerAnswer, yourResponse, coachFeedback }) {
+  const res = await fetch(`${BASE_URL}/api/interviews/${interviewId}/history`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ partner_answer: partnerAnswer, your_response: yourResponse, coach_feedback: coachFeedback })
+  })
+  if (!res.ok) throw new Error(await parseErrorDetail(res))
+  return res.json()
+}
+
 async function mintRealtimeToken(token, interviewId, source) {
   const res = await fetch(`${BASE_URL}/api/interviews/${interviewId}/realtime-token`, {
     method: 'POST',
@@ -312,5 +322,6 @@ module.exports = {
   uploadQa,
   updateQa,
   deleteQa,
-  mintRealtimeToken
+  mintRealtimeToken,
+  savePracticeHistoryEntry
 }

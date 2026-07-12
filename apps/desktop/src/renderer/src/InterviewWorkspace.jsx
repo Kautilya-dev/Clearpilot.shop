@@ -43,9 +43,12 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
   const audioCapture = useAudioCapture()
   // listenModeRef mirrors listenMode without closure-staleness in IPC callbacks
   const listenModeRef = useRef('off')
-  const [listenMode, setListenMode] = useState('off') // 'off' | 'speaker' | 'mic' | 'both'
+  const [listenMode, setListenMode] = useState('off') // 'off' | 'speaker' | 'mic' | 'both' | 'partner'
   const [speakerTranscript, setSpeakerTranscript] = useState('')
   const [listenError, setListenError] = useState('')
+  // Practice Partner mode - whether the web app's Prompter tab is currently connected to
+  // this session's relay (see JudgeTab.jsx's TeleprompterPanel).
+  const [guestConnected, setGuestConnected] = useState(false)
 
   // Job Mode round state — each round: { id, question, suggestion, response, feedback }
   const jobCurrentRef = useRef({ question: '', suggestion: '', response: '' })
@@ -133,11 +136,11 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
       if (source === 'speaker') {
         speakerTranscriptRef.current = text
         setSpeakerTranscript(text)
-        if (listenModeRef.current === 'both') {
+        if (listenModeRef.current === 'both' || listenModeRef.current === 'partner') {
           jobCurrentRef.current.question = text
           setJobCurrent((c) => ({ ...c, question: text }))
         }
-      } else if (source === 'mic' && listenModeRef.current === 'both') {
+      } else if (source === 'mic' && (listenModeRef.current === 'both' || listenModeRef.current === 'partner')) {
         // What the candidate actually said in Job Mode
         jobCurrentRef.current.response = text
         setJobCurrent((c) => ({ ...c, response: text }))
@@ -152,6 +155,13 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
           setJobCurrent((c) => ({ ...c, suggestion: text }))
           speakerTranscriptRef.current = ''
           setSpeakerTranscript('')
+        } else if (listenModeRef.current === 'partner') {
+          // Practice Partner mode: the speaker session still transcribes the interviewer's
+          // question (above), but its own generated answer goes unused here - the judge's
+          // reference answer comes from the relayed partner transcript instead (see the
+          // onPracticeTranscript effect below), not from this local AI-generated one.
+          speakerTranscriptRef.current = ''
+          setSpeakerTranscript('')
         } else {
           // Copilot mode: push speaker answer directly into conversation history
           const question = speakerTranscriptRef.current || '🎤 Speaker'
@@ -161,7 +171,7 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
           setHistory((h) => [{ question, html, sources: [], badge: '🎤 Live audio', timing: null }, ...h])
         }
       } else if (source === 'mic') {
-        if (listenModeRef.current === 'both') {
+        if (listenModeRef.current === 'both' || listenModeRef.current === 'partner') {
           // Job Mode: mic GPT answer is the judge's feedback — finalize the round
           const round = {
             id: ++roundIdRef.current,
@@ -170,9 +180,15 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
             response: jobCurrentRef.current.response,
             feedback: text
           }
+          const wasPartnerRound = listenModeRef.current === 'partner'
           jobCurrentRef.current = { question: '', suggestion: '', response: '' }
           setJobCurrent({ question: '', suggestion: '', response: '', feedback: '' })
           setJobRounds((r) => [round, ...r])
+          // Regular AI-vs-candidate Job Mode rounds aren't persisted (matches existing
+          // behavior) - only practice-partner rounds get saved to History.
+          if (wasPartnerRound) {
+            window.clearpilot.savePracticeRound(interview.id, round.suggestion, round.response, text)
+          }
         } else {
           // Copilot mode: push mic answer directly into conversation history
           const question = speakerTranscriptRef.current || '🎤 Mic'
@@ -187,6 +203,22 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
     window.clearpilot.onListeningError(({ message }) => setListenError(message))
     return () => window.clearpilot.offListeningEvents()
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Practice Partner mode - the relayed transcript from the web app's Prompter tab (see
+  // apps/web/routers/practice.py) populates jobCurrent.suggestion the same way the AI's
+  // speaker-generated answer does in normal Job Mode, just from a different source. A
+  // partner may speak across several pauses, so each arriving chunk appends rather than
+  // replaces - jobCurrentRef.current resets naturally when a round finalizes above.
+  useEffect(() => {
+    window.clearpilot.onPracticeTranscript(({ text }) => {
+      const accumulated = jobCurrentRef.current.suggestion ? `${jobCurrentRef.current.suggestion} ${text}` : text
+      jobCurrentRef.current.suggestion = accumulated
+      setJobCurrent((c) => ({ ...c, suggestion: accumulated }))
+    })
+    window.clearpilot.onPracticeGuestStatus(({ connected }) => setGuestConnected(connected))
+    window.clearpilot.onPracticeError(({ message }) => setListenError(message))
+    return () => window.clearpilot.offPracticeEvents()
   }, [])
 
   async function submitQuestion(question) {
@@ -214,7 +246,7 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
     } else if (source === 'mic') {
       const captureRes = await audioCapture.startMicCapture()
       if (!captureRes.success) { setListenError(captureRes.message); return }
-    } else if (source === 'both') {
+    } else if (source === 'both' || source === 'partner') {
       const captureRes = await audioCapture.startBothCapture()
       if (!captureRes.success) { setListenError(captureRes.message); return }
     }
@@ -232,13 +264,14 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
     } else if (mode === 'mic') {
       await window.clearpilot.stopListening('mic')
       audioCapture.stopMicCapture()
-    } else if (mode === 'both') {
-      await window.clearpilot.stopListening('both')
+    } else if (mode === 'both' || mode === 'partner') {
+      await window.clearpilot.stopListening(mode)
       audioCapture.stopBothCapture()
     }
     listenModeRef.current = 'off'
     setListenMode('off')
     setSpeakerTranscript('')
+    setGuestConnected(false)
   }
 
   useEffect(() => {
@@ -338,6 +371,7 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
           micDeviceName={audioCapture.micDeviceName}
           jobCurrent={jobCurrent}
           jobRounds={jobRounds}
+          guestConnected={guestConnected}
           onFocusMode={() => enterFocusMode('judge')}
         />
       </div>

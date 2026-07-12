@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -7,7 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.base import get_db
-from db.models import HistoryEntry, Interview
+from db.models import HistoryEntry, Interview, User
+from routers.auth import get_current_user
 from routers.interviews import get_owned_interview
 
 router = APIRouter(tags=["history"])
@@ -47,6 +49,36 @@ async def list_history(
         .limit(min(limit, 200))
     )
     return [_to_response(e) for e in result]
+
+
+class SavePracticeRoundRequest(BaseModel):
+    partner_answer: str
+    your_response: str
+    coach_feedback: str
+
+
+# Job Mode rounds (AI-suggested or practice-partner) aren't persisted anywhere else - unlike
+# Copilot chat, which /chat/ask writes to HistoryEntry itself server-side, nothing calls this
+# for the normal AI-vs-candidate flow. This is deliberately scoped to practice-partner rounds
+# only, called by the Desktop app once a round with a real partner (not the AI) completes.
+@router.post("/interviews/{interview_id}/history", response_model=HistoryEntryResponse)
+async def save_practice_round(
+    body: SavePracticeRoundRequest,
+    interview: Interview = Depends(get_owned_interview),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    question = f"Practice session with partner — {datetime.now(timezone.utc).isoformat()}"
+    answer = (
+        f"**Partner's spoken answer:**\n{body.partner_answer}\n\n"
+        f"**Your response:**\n{body.your_response}\n\n"
+        f"**Coach feedback:**\n{body.coach_feedback}"
+    )
+    entry = HistoryEntry(user_id=current_user.id, interview_id=interview.id, question=question, answer=answer, sources="[]")
+    db.add(entry)
+    await db.commit()
+    await db.refresh(entry)
+    return _to_response(entry)
 
 
 @router.delete("/interviews/{interview_id}/history/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)

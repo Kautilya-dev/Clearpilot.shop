@@ -19,6 +19,13 @@ function renderMarkdown(text) {
 
 // "Job Mode" — Speaker hears the interviewer and GPT suggests an answer.
 // Mic hears the candidate's actual response and a judge compares it to the suggestion.
+//
+// Practice Partner mode ('partner' instead of 'both'): a real person, on the web app's
+// Prompter tab, speaks the answer instead of the AI - their live transcript arrives via
+// jobCurrent.suggestion (same slot, different source) and renders in the Teleprompter panel
+// beside this one. The Speaker session still runs for interviewer-question context, and the
+// candidate's own mic response is still judged - just against a human answer instead of an
+// AI-generated one.
 export default function JudgeTab({
   listenMode,
   listenError,
@@ -30,11 +37,37 @@ export default function JudgeTab({
   micDeviceName,
   jobCurrent,
   jobRounds,
+  guestConnected,
   onFocusMode
 }) {
-  const active = listenMode === 'both'
+  const jobMode = listenMode === 'both'
+  const partnerMode = listenMode === 'partner'
+  const active = jobMode || partnerMode
 
   return (
+    <div className="flex-1 flex overflow-hidden">
+      {partnerMode && (
+        <div className="w-72 shrink-0 border-r border-gray-200 flex flex-col overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 shrink-0">
+            <p className="text-xs font-semibold text-gray-700">Teleprompter</p>
+            <p className="text-[10px] mt-0.5 flex items-center gap-1">
+              <span className={`w-1.5 h-1.5 rounded-full ${guestConnected ? 'bg-green-500' : 'bg-gray-300'}`} />
+              <span className={guestConnected ? 'text-green-700' : 'text-gray-400'}>
+                {guestConnected ? 'Partner connected' : 'Waiting for partner…'}
+              </span>
+            </p>
+          </div>
+          <div className="flex-1 overflow-y-auto px-4 py-3">
+            {jobCurrent.suggestion ? (
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{jobCurrent.suggestion}</p>
+            ) : (
+              <p className="text-xs text-gray-400">
+                Have your partner open this interview's Prompter tab in the web app and hit Start speaking.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Conversation area */}
       <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
@@ -145,14 +178,27 @@ export default function JudgeTab({
       <div className="border-t border-gray-200 px-8 py-4 shrink-0 space-y-2">
         <div className="flex items-center gap-3 flex-wrap">
           <button
-            onClick={() => (active ? onStopListening() : onStartListening('both'))}
-            className={`text-sm px-4 py-2 rounded-lg border font-medium transition-colors ${
-              active
+            onClick={() => (jobMode ? onStopListening() : onStartListening('both'))}
+            disabled={partnerMode}
+            className={`text-sm px-4 py-2 rounded-lg border font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+              jobMode
                 ? 'border-purple-500 bg-purple-50 text-purple-700 hover:bg-purple-100'
                 : 'border-gray-300 text-gray-600 hover:border-purple-300 hover:text-purple-600'
             }`}
           >
-            {active ? 'Stop Job Mode' : 'Start Job Mode'}
+            {jobMode ? 'Stop Job Mode' : 'Start Job Mode'}
+          </button>
+
+          <button
+            onClick={() => (partnerMode ? onStopListening() : onStartListening('partner'))}
+            disabled={jobMode}
+            className={`text-sm px-4 py-2 rounded-lg border font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+              partnerMode
+                ? 'border-purple-500 bg-purple-50 text-purple-700 hover:bg-purple-100'
+                : 'border-gray-300 text-gray-600 hover:border-purple-300 hover:text-purple-600'
+            }`}
+          >
+            {partnerMode ? 'Stop practice session' : 'Practice with a partner'}
           </button>
 
           <button
@@ -196,6 +242,7 @@ export default function JudgeTab({
           </p>
         )}
       </div>
+    </div>
     </div>
   )
 }

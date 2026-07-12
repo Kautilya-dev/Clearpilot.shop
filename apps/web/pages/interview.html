@@ -49,6 +49,7 @@
       <button data-tab="materials" class="tab-btn text-sm font-medium py-3 border-b-2 -mb-px">Materials</button>
       <button data-tab="qa" class="tab-btn text-sm font-medium py-3 border-b-2 -mb-px">Q&amp;A</button>
       <button data-tab="copilot" class="tab-btn text-sm font-medium py-3 border-b-2 -mb-px">Copilot</button>
+      <button data-tab="prompter" class="tab-btn text-sm font-medium py-3 border-b-2 -mb-px">Prompter</button>
     </div>
 
     <div class="flex-1 overflow-hidden">
@@ -122,6 +123,31 @@
           <p class="text-xs text-gray-400 mt-2">Click the mic once to talk hands-free — click again to stop. Works best in Chrome.</p>
         </div>
       </div>
+
+      <!-- Prompter -->
+      <div id="panel-prompter" class="h-full overflow-hidden flex flex-col hidden">
+        <div id="prompter-transcript" class="flex-1 overflow-y-auto px-8 py-6 space-y-3">
+          <div class="text-center py-16">
+            <div class="w-12 h-12 rounded-2xl bg-purple-50 flex items-center justify-center mx-auto mb-4">
+              <i data-lucide="radio" class="w-6 h-6 text-purple-600"></i>
+            </div>
+            <p class="font-medium mb-1">Speak the answer for your practice partner</p>
+            <p class="text-sm text-gray-500 max-w-sm mx-auto">
+              Have your partner start Job Mode on their Desktop app, then hit Start below and speak
+              the answer out loud — it streams to them live as a suggested answer to judge against.
+            </p>
+          </div>
+        </div>
+        <div class="border-t border-gray-200 px-8 py-4 shrink-0">
+          <div class="flex items-center gap-3">
+            <button type="button" id="prompter-start-btn" class="btn-primary text-sm">
+              <i data-lucide="mic" class="w-4 h-4"></i>
+              Start speaking
+            </button>
+            <span id="prompter-status" class="text-xs text-gray-400">Not listening</span>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -147,7 +173,7 @@
 
   // ---------- Tabs ----------
   function switchTab(tab) {
-    ['materials', 'qa', 'copilot'].forEach(t => {
+    ['materials', 'qa', 'copilot', 'prompter'].forEach(t => {
       document.getElementById(`panel-${t}`).classList.toggle('hidden', t !== tab);
       const btn = document.querySelector(`.tab-btn[data-tab="${t}"]`);
       btn.classList.toggle('border-purple-600', t === tab);
@@ -609,6 +635,144 @@
     recognition.start();
     isListening = true;
     updateMicUI();
+  });
+
+  // ---------- Prompter ----------
+  // Uses the browser's native Web Speech API, same mechanism as the Copilot mic button
+  // above - no OpenAI Realtime session needed here, since we only need a live transcript
+  // of what the practice partner says, not an AI-generated response to it.
+  let prompterRecognition = null;
+  let prompterListening = false;
+  let prompterInterimEl = null; // the in-progress (not-yet-final) line, updated live word-by-word
+  let practiceSocket = null;
+  let practiceConnected = false;
+
+  // Relays each finalized phrase to the candidate's Desktop app via the backend's Redis-
+  // Pub/Sub relay (apps/web/routers/practice.py) - keyed by interview_id, no join code
+  // needed since pairing is implicit (same account, same interview on both sides).
+  function connectPracticeSocket() {
+    const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = `${scheme}//${location.host}/api/practice-relay/ws?interview_id=${interviewId}&role=guest&token=${encodeURIComponent(getToken())}`;
+    practiceSocket = new WebSocket(url);
+    practiceSocket.onopen = () => {
+      practiceConnected = true;
+      updatePrompterStatus();
+    };
+    practiceSocket.onerror = () => {
+      practiceConnected = false;
+      updatePrompterStatus('Connection error - is the candidate signed in?');
+    };
+    practiceSocket.onclose = () => {
+      practiceConnected = false;
+      if (prompterListening) updatePrompterStatus();
+    };
+  }
+
+  function disconnectPracticeSocket() {
+    practiceSocket?.close();
+    practiceSocket = null;
+    practiceConnected = false;
+  }
+
+  function sendPracticeTranscript(text) {
+    if (practiceSocket && practiceSocket.readyState === WebSocket.OPEN) {
+      practiceSocket.send(JSON.stringify({ type: 'transcript_final', text }));
+    }
+  }
+
+  function appendPrompterLine(text) {
+    const transcriptEl = document.getElementById('prompter-transcript');
+    transcriptEl.querySelector('.text-center')?.remove();
+    const p = document.createElement('p');
+    p.className = 'text-sm text-gray-800 bg-gray-50 border border-gray-100 rounded-xl px-4 py-2.5';
+    p.textContent = text;
+    transcriptEl.appendChild(p);
+    transcriptEl.scrollTop = transcriptEl.scrollHeight;
+  }
+
+  // Renders the still-being-spoken phrase as soon as each speech-recognition tick reports it,
+  // rather than waiting for isFinal (which only fires once the engine detects a pause) - this
+  // is what makes the transcript feel instant instead of lagging a beat behind actual speech.
+  function updatePrompterInterim(text) {
+    const transcriptEl = document.getElementById('prompter-transcript');
+    if (!text) {
+      prompterInterimEl?.remove();
+      prompterInterimEl = null;
+      return;
+    }
+    transcriptEl.querySelector('.text-center')?.remove();
+    if (!prompterInterimEl) {
+      prompterInterimEl = document.createElement('p');
+      prompterInterimEl.className = 'text-sm text-gray-400 italic px-4 py-2.5';
+      transcriptEl.appendChild(prompterInterimEl);
+    }
+    prompterInterimEl.textContent = text;
+    transcriptEl.scrollTop = transcriptEl.scrollHeight;
+  }
+
+  function updatePrompterStatus(override) {
+    const statusEl = document.getElementById('prompter-status');
+    if (override) {
+      statusEl.textContent = override;
+    } else if (!prompterListening) {
+      statusEl.textContent = 'Not listening';
+    } else {
+      statusEl.textContent = practiceConnected ? 'Listening — connected to your partner' : 'Listening — connecting…';
+    }
+  }
+
+  function updatePrompterUI() {
+    const btn = document.getElementById('prompter-start-btn');
+    btn.innerHTML = prompterListening
+      ? '<i data-lucide="mic-off" class="w-4 h-4"></i>Stop speaking'
+      : '<i data-lucide="mic" class="w-4 h-4"></i>Start speaking';
+    btn.classList.toggle('bg-red-600', prompterListening);
+    btn.classList.toggle('hover:bg-red-700', prompterListening);
+    updatePrompterStatus();
+    if (window.lucide) lucide.createIcons();
+  }
+
+  document.getElementById('prompter-start-btn').addEventListener('click', () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Speech recognition is not supported in this browser. Try Chrome.');
+      return;
+    }
+    if (prompterListening) {
+      prompterListening = false;
+      prompterRecognition?.stop();
+      disconnectPracticeSocket();
+      updatePrompterInterim('');
+      updatePrompterUI();
+      return;
+    }
+    connectPracticeSocket();
+    prompterRecognition = new SpeechRecognition();
+    prompterRecognition.continuous = true;
+    prompterRecognition.interimResults = true;
+    prompterRecognition.lang = 'en-US';
+    prompterRecognition.onresult = (event) => {
+      let interimText = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          const text = transcript.trim();
+          if (text) {
+            appendPrompterLine(text);
+            sendPracticeTranscript(text);
+          }
+          updatePrompterInterim('');
+        } else {
+          interimText += transcript;
+        }
+      }
+      if (interimText) updatePrompterInterim(interimText);
+    };
+    prompterRecognition.onerror = () => { prompterListening = false; disconnectPracticeSocket(); updatePrompterInterim(''); updatePrompterUI(); };
+    prompterRecognition.onend = () => { if (prompterListening) prompterRecognition.start(); };
+    prompterRecognition.start();
+    prompterListening = true;
+    updatePrompterUI();
   });
 
   // ---------- Init ----------

@@ -18,8 +18,9 @@ CRITICAL RULES:
 1. Answer in first person, as the candidate ("I configured...", "In my last project, I..."), never describing them in third person.
 2. Ground every technical claim in the reference material, resume, and scenarios below. Do not invent technologies, projects, metrics, or experience that aren't supported by them.
 3. If neither the resume nor the reference material covers what's being asked, say so honestly (e.g. "I haven't worked directly with that") rather than making something up. Never fabricate.
-4. Give thorough, detailed answers - explain the reasoning and configuration steps in depth, and include a concrete example or scenario where the material supports one. Longer, complete answers are preferred over short ones.
+4. Give thorough, detailed answers - explain the reasoning and configuration steps in depth, and include a concrete example or scenario where the material supports one. Favor longer, complete answers over short ones; when unsure whether to add more depth, add it.
 5. Use markdown to make longer answers easy to scan: **bold** for key terms, numbered or bulleted lists for multi-step processes. Keep the language natural and first-person, not a dry reference doc.
+6. Every **bolded** key term must be immediately followed by a short, concrete example, mini-scenario, or plain-language explanation of what it means and how it was used - e.g. "I used **Content Modifier** to enrich the message (for example, stamping a `correlationId` header onto every payload for end-to-end tracing)." Never bold a term and move on without unpacking it - the candidate needs to be able to explain that term unprompted if the interviewer digs in on it.
 {resume_section}{jd_section}{scenario_section}
 REFERENCE MATERIAL (official documentation for this interview's subjects):
 {doc_context}"""
@@ -79,15 +80,15 @@ async def get_active_material(db: AsyncSession, interview_id: UUID, material_typ
 
 
 FORMAT_MODE_INSTRUCTIONS = {
-    "bullets": "Structure the answer as short bullet points covering the key ideas.",
-    "star": "Structure the answer using the STAR method: Situation, Task, Action, Result, labelling each part.",
+    "bullets": "Structure the answer as bullet points covering the key ideas - each bullet that introduces a **bolded** term should also unpack it with a brief example.",
+    "star": "Structure the answer using the STAR method: Situation, Task, Action, Result, labelling each part - flesh each part out with specifics rather than one-line summaries.",
     "concise": "Give a single, direct one-sentence answer with no elaboration.",
-    "detailed": "Give a fuller explanation, including the reasoning and a concrete code or configuration example where relevant.",
+    "detailed": "Give a fuller, elaborate explanation: walk through the reasoning and configuration steps in depth, and for every **bolded** key term include a concrete code/configuration example or worked mini-scenario right where it's introduced, not just a definition.",
 }
 ANSWER_LENGTH_INSTRUCTIONS = {
     "short": "Keep it to no more than 3 sentences or bullet points total.",
     "medium": "Keep it to roughly 4-6 sentences or bullet points total.",
-    "long": "Use roughly 8-10 sentences or bullet points, going into more depth than usual.",
+    "long": "Go long and thorough - roughly 10-15 sentences or bullet points, covering the reasoning, a worked example, and any relevant edge case or gotcha, so the candidate has enough material to speak on this for a couple of minutes if the interviewer asks them to elaborate.",
 }
 
 
