@@ -93,6 +93,10 @@ FORMAT_MODE_INSTRUCTIONS = {
 ANSWER_LENGTH_INSTRUCTIONS = {
     "short": "Write at least 50 words, up to about 70 (roughly 20-30 seconds spoken aloud) - the fastest version, but still one full, complete sentence or two, not a fragment.",
     "medium": "Write at least 130 words, up to about 160 (roughly one minute spoken aloud) - the interview-perfect default. 130 words is a floor: if your answer is shorter, you stopped too early - go back and actually explain the reasoning and walk through one concrete example, don't just pad it. This should read as 4-6 full sentences of real substance, never a 2-sentence summary.",
+    # Same target as "medium" - a dedicated, explicitly-named option for the standard
+    # interview-coaching "always have a 1-minute answer ready" length, for users who want
+    # to pick it by that name rather than infer it from "Medium".
+    "one_minute": "Write at least 130 words, up to about 160 (roughly one minute spoken aloud) - the interview-perfect default. 130 words is a floor: if your answer is shorter, you stopped too early - go back and actually explain the reasoning and walk through one concrete example, don't just pad it. This should read as 4-6 full sentences of real substance, never a 2-sentence summary.",
     "long": "Write at least 200 words, up to about 260 (roughly 90 seconds spoken aloud) - use this only when the question genuinely needs more depth (a multi-part scenario, a comparison). 200 words is a floor - go deeper with a second example or edge case rather than repeating the same point to pad it out.",
 }
 

@@ -10,6 +10,7 @@ const FORMAT_OPTIONS = [
 const LENGTH_OPTIONS = [
   { value: 'short', label: 'Short' },
   { value: 'medium', label: 'Medium' },
+  { value: 'one_minute', label: '1 Minute' },
   { value: 'long', label: 'Long' }
 ]
 
