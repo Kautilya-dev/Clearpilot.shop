@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 60 * 24 * 30  # 30 days, matches desktop's "stay signed in" expectation
     admin_emails: str = ""  # comma-separated allowlist - "promoting" an admin is just editing this env var
     openai_api_key: str = ""
+    # Tigris (S3-compatible) bucket holding the Desktop app installer - served via a
+    # presigned URL from routers/downloads.py rather than a public bucket, so the bucket
+    # itself stays private.
+    tigris_endpoint: str = ""
+    tigris_access_key_id: str = ""
+    tigris_secret_access_key: str = ""
+    tigris_bucket_name: str = ""
 
     @property
     def admin_emails_set(self) -> set[str]:

@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from config import settings
-from routers import admin, auth, chat, history, interviews, materials, pages, practice, qa, realtime
+from routers import admin, auth, chat, downloads, history, interviews, materials, pages, practice, qa, realtime
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -21,6 +21,7 @@ app.include_router(history.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(realtime.router, prefix="/api")
 app.include_router(practice.router, prefix="/api")
+app.include_router(downloads.router)
 app.include_router(pages.router)
 app.mount("/assets", StaticFiles(directory=_STATIC_DIR), name="assets")
 
