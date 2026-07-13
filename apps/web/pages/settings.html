@@ -104,6 +104,20 @@
 <script>
   if (!requireAuthOrRedirect()) { /* redirected */ }
 
+  // "1 Minute" only makes sense paired with a format that actually fills 130-160 words with
+  // real substance (Detailed/STAR) - Bullets/Concise are built to be terse, so pairing them
+  // with 1 Minute tends to read as padded rather than substantive. Disabled (not removed) so
+  // it stays visible as an option that becomes available once the format is switched.
+  function updateLengthOptionAvailability() {
+    const formatMode = document.getElementById('answer-format-mode').value;
+    const lengthSelect = document.getElementById('answer-length');
+    const oneMinuteOption = lengthSelect.querySelector('option[value="one_minute"]');
+    const allowed = formatMode === 'detailed' || formatMode === 'star';
+    oneMinuteOption.disabled = !allowed;
+    if (!allowed && lengthSelect.value === 'one_minute') lengthSelect.value = 'medium';
+  }
+  document.getElementById('answer-format-mode').addEventListener('change', updateLengthOptionAvailability);
+
   (async () => {
     const user = await fetchCurrentUser();
     if (!user) return;
@@ -111,6 +125,7 @@
     document.getElementById('profile-email').textContent = user.email;
     document.getElementById('answer-format-mode').value = user.answer_format_mode;
     document.getElementById('answer-length').value = user.answer_length;
+    updateLengthOptionAvailability();
   })();
 
   document.getElementById('profile-save').addEventListener('click', async () => {

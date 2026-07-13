@@ -155,6 +155,15 @@ async def update_preferences(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid answer_format_mode")
     if body.answer_length not in valid_lengths:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid answer_length")
+    # 1 Minute only makes sense paired with a format that actually fills 130-160 words with
+    # real substance - Bullets/Concise are built to be terse. Mirrors the UI-side gating in
+    # settings.html / AnswerTemplateTab.jsx; enforced here too so the API can't be used to
+    # save the combination directly.
+    if body.answer_length == "one_minute" and body.answer_format_mode not in {"detailed", "star"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="1 Minute length requires Detailed or STAR format",
+        )
     current_user.answer_format_mode = body.answer_format_mode
     current_user.answer_length = body.answer_length
     await db.commit()

@@ -17,6 +17,11 @@ const LENGTH_OPTIONS = [
 // Account-level preference (shared with the web app, not a local per-device setting like
 // StylingTab/BehaviourTab) - server-backed the same way AccountTab is, via the `user` prop
 // lifted from App.jsx rather than window.clearpilot.getSettings()/saveSettings().
+// 1 Minute only makes sense paired with a format that actually fills 130-160 words with real
+// substance - Bullets/Concise are built to be terse, so pairing them with 1 Minute tends to
+// read as padded rather than substantive.
+const ONE_MINUTE_ALLOWED_FORMATS = new Set(['detailed', 'star'])
+
 export default function AnswerTemplateTab({ user, onProfileUpdated }) {
   const [answerFormatMode, setAnswerFormatMode] = useState(user?.answer_format_mode || 'bullets')
   const [answerLength, setAnswerLength] = useState(user?.answer_length || 'medium')
@@ -28,6 +33,13 @@ export default function AnswerTemplateTab({ user, onProfileUpdated }) {
     setAnswerFormatMode(user?.answer_format_mode || 'bullets')
     setAnswerLength(user?.answer_length || 'medium')
   }, [user])
+
+  function handleFormatChange(nextFormat) {
+    setAnswerFormatMode(nextFormat)
+    if (answerLength === 'one_minute' && !ONE_MINUTE_ALLOWED_FORMATS.has(nextFormat)) {
+      setAnswerLength('medium')
+    }
+  }
 
   async function handleSave(e) {
     e.preventDefault()
@@ -57,7 +69,7 @@ export default function AnswerTemplateTab({ user, onProfileUpdated }) {
             <span className="text-xs text-gray-500">Format</span>
             <select
               value={answerFormatMode}
-              onChange={(e) => setAnswerFormatMode(e.target.value)}
+              onChange={(e) => handleFormatChange(e.target.value)}
               className="field-input mt-1"
             >
               {FORMAT_OPTIONS.map((opt) => (
@@ -75,7 +87,11 @@ export default function AnswerTemplateTab({ user, onProfileUpdated }) {
               className="field-input mt-1"
             >
               {LENGTH_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
+                <option
+                  key={opt.value}
+                  value={opt.value}
+                  disabled={opt.value === 'one_minute' && !ONE_MINUTE_ALLOWED_FORMATS.has(answerFormatMode)}
+                >
                   {opt.label}
                 </option>
               ))}
