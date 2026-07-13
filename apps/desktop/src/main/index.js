@@ -549,15 +549,30 @@ function registerIpcHandlers() {
   const ANSWER_LENGTH_INSTRUCTIONS = {
     short: 'Write at least 50 words, up to about 70 (roughly 20-30 seconds spoken aloud) - the fastest version, but still one full, complete sentence or two, not a fragment.',
     medium: 'Write at least 130 words, up to about 160 (roughly one minute spoken aloud) - the interview-perfect default. 130 words is a floor: if your answer is shorter, you stopped too early - go back and actually explain the reasoning and walk through one concrete example, don\'t just pad it. This should read as 4-6 full sentences of real substance, never a 2-sentence summary.',
-    // Same target as "medium" - a dedicated, explicitly-named option for the standard
-    // interview-coaching "always have a 1-minute answer ready" length.
+    // Fallback only - "one_minute" is only selectable alongside star/detailed (see
+    // STAR_DETAILED_LENGTH_INSTRUCTIONS below), but an account that saved this combo before
+    // that restriction existed could still have it stored with a different format.
     one_minute: 'Write at least 130 words, up to about 160 (roughly one minute spoken aloud) - the interview-perfect default. 130 words is a floor: if your answer is shorter, you stopped too early - go back and actually explain the reasoning and walk through one concrete example, don\'t just pad it. This should read as 4-6 full sentences of real substance, never a 2-sentence summary.',
     long: 'Write at least 200 words, up to about 260 (roughly 90 seconds spoken aloud) - use this only when the question genuinely needs more depth (a multi-part scenario, a comparison). 200 words is a floor - go deeper with a second example or edge case rather than repeating the same point to pad it out.'
   }
 
+  // STAR and Detailed have the structure to support a genuinely comprehensive answer, so for
+  // these two formats "1 Minute" and "Long" mean a thorough, multi-angle answer rather than a
+  // tight one-minute spoken one - a deliberate exception to the system prompt's "pick 2-3
+  // points" guidance, only for this format+length combination.
+  const STAR_DETAILED_LENGTH_INSTRUCTIONS = {
+    one_minute:
+      'Write a genuinely comprehensive answer, at least 500 words, up to about 650 - this is an intentional exception to the "pick 2-3 points" guidance. Structure it the way a thorough technical mentor would: the core answer with a concrete example, the practical nuance of when this applies versus when it doesn\'t (if relevant to the question), a real-world design pattern or approach you follow, and close with a short, tightly-distilled interview-ready version of the same answer (2-4 sentences) so the candidate has both the deep understanding and the quick spoken version ready.',
+    long: 'Write a thorough answer, at least 300 words, up to about 450 - covering the core answer with a concrete example plus one layer of practical nuance (when it applies, a real design consideration), without needing every angle the most comprehensive answer would cover.'
+  }
+
   function buildAnswerTemplateInstruction(answerFormatMode, answerLength) {
     const mode = FORMAT_MODE_INSTRUCTIONS[answerFormatMode] || FORMAT_MODE_INSTRUCTIONS.bullets
-    const length = ANSWER_LENGTH_INSTRUCTIONS[answerLength] || ANSWER_LENGTH_INSTRUCTIONS.medium
+    const isStarOrDetailed = answerFormatMode === 'star' || answerFormatMode === 'detailed'
+    const length =
+      (isStarOrDetailed && STAR_DETAILED_LENGTH_INSTRUCTIONS[answerLength]) ||
+      ANSWER_LENGTH_INSTRUCTIONS[answerLength] ||
+      ANSWER_LENGTH_INSTRUCTIONS.medium
     return `${mode} ${length}`
   }
 

@@ -18,7 +18,7 @@ CRITICAL RULES:
 1. Answer in first person, as the candidate ("I configured...", "In my last project, I..."), never describing them in third person.
 2. Ground every technical claim in the reference material, resume, and scenarios below. Do not invent technologies, projects, metrics, or experience that aren't supported by them.
 3. If neither the resume nor the reference material covers what's being asked, say so honestly (e.g. "I haven't worked directly with that") rather than making something up. Never fabricate.
-4. Keep every answer interview-perfect: complete and confident, but paced the way a real spoken interview answer sounds - see the word-count target below (roughly one minute by default). Treat that target as a FLOOR, not just a ceiling - a two-sentence summary is a failure even under "medium," because it doesn't sound like a complete interview answer. Reach the target by actually explaining the reasoning and walking through one concrete example in real detail, not by padding with filler. Pick the 2-3 points that matter most rather than trying to cover everything; a focused one-minute answer beats a long one that loses the interviewer's attention.
+4. Keep every answer interview-perfect: complete and confident, but paced the way a real spoken interview answer sounds - see the word-count target below (roughly one minute by default). Treat that target as a FLOOR, not just a ceiling - a two-sentence summary is a failure even under "medium," because it doesn't sound like a complete interview answer. Reach the target by actually explaining the reasoning and walking through one concrete example in real detail, not by padding with filler. Pick the 2-3 points that matter most rather than trying to cover everything; a focused one-minute answer beats a long one that loses the interviewer's attention. Exception: if the word-count target below explicitly calls for a comprehensive, multi-angle answer, follow that instead - it overrides "pick 2-3 points" for that specific format+length combination.
 5. Use markdown to make the answer easy to scan: **bold** for key terms, numbered or bulleted lists for multi-step processes. Keep the language natural and first-person, not a dry reference doc.
 6. Every **bolded** key term must be immediately followed by a short, concrete example, mini-scenario, or plain-language explanation of what it means and how it was used - e.g. "I used **Content Modifier** to enrich the message (for example, stamping a `correlationId` header onto every payload for end-to-end tracing)." Never bold a term and move on without unpacking it. In a tight answer this means bolding only the 1-2 terms that matter most, not every possible one, so the example still fits inside the word-count target.
 {resume_section}{jd_section}{scenario_section}
@@ -93,17 +93,43 @@ FORMAT_MODE_INSTRUCTIONS = {
 ANSWER_LENGTH_INSTRUCTIONS = {
     "short": "Write at least 50 words, up to about 70 (roughly 20-30 seconds spoken aloud) - the fastest version, but still one full, complete sentence or two, not a fragment.",
     "medium": "Write at least 130 words, up to about 160 (roughly one minute spoken aloud) - the interview-perfect default. 130 words is a floor: if your answer is shorter, you stopped too early - go back and actually explain the reasoning and walk through one concrete example, don't just pad it. This should read as 4-6 full sentences of real substance, never a 2-sentence summary.",
-    # Same target as "medium" - a dedicated, explicitly-named option for the standard
-    # interview-coaching "always have a 1-minute answer ready" length, for users who want
-    # to pick it by that name rather than infer it from "Medium".
+    # Fallback only - "one_minute" is only selectable alongside star/detailed (see
+    # STAR_DETAILED_LENGTH_INSTRUCTIONS below), but an account that saved this combo before
+    # that restriction existed could still have it stored with a different format.
     "one_minute": "Write at least 130 words, up to about 160 (roughly one minute spoken aloud) - the interview-perfect default. 130 words is a floor: if your answer is shorter, you stopped too early - go back and actually explain the reasoning and walk through one concrete example, don't just pad it. This should read as 4-6 full sentences of real substance, never a 2-sentence summary.",
     "long": "Write at least 200 words, up to about 260 (roughly 90 seconds spoken aloud) - use this only when the question genuinely needs more depth (a multi-part scenario, a comparison). 200 words is a floor - go deeper with a second example or edge case rather than repeating the same point to pad it out.",
+}
+
+# STAR and Detailed have the structure to support a genuinely comprehensive answer (STAR's
+# four required parts, Detailed's "fuller explanation with a fully worked example"), so for
+# these two formats "1 Minute" and "Long" mean something different than they do for
+# Bullets/Concise: a thorough, multi-angle answer rather than a tight one-minute spoken one.
+# This is a deliberate exception to rule 4's "pick 2-3 points, a focused answer beats a long
+# one" guidance above - only for this format+length combination.
+STAR_DETAILED_LENGTH_INSTRUCTIONS = {
+    "one_minute": (
+        "Write a genuinely comprehensive answer, at least 500 words, up to about 650 - this is an "
+        "intentional exception to rule 4's \"pick 2-3 points\" guidance above. Structure it the way a "
+        "thorough technical mentor would: the core answer with a concrete example, the practical "
+        "nuance of when this applies versus when it doesn't (if relevant to the question), a "
+        "real-world design pattern or approach you follow, and close with a short, tightly-distilled "
+        "interview-ready version of the same answer (2-4 sentences) so the candidate has both the "
+        "deep understanding and the quick spoken version ready."
+    ),
+    "long": (
+        "Write a thorough answer, at least 300 words, up to about 450 - covering the core answer with "
+        "a concrete example plus one layer of practical nuance (when it applies, a real design "
+        "consideration), without needing every angle the most comprehensive answer would cover."
+    ),
 }
 
 
 def build_answer_template_instruction(answer_format_mode: str, answer_length: str) -> str:
     mode = FORMAT_MODE_INSTRUCTIONS.get(answer_format_mode, FORMAT_MODE_INSTRUCTIONS["bullets"])
-    length = ANSWER_LENGTH_INSTRUCTIONS.get(answer_length, ANSWER_LENGTH_INSTRUCTIONS["medium"])
+    if answer_format_mode in ("star", "detailed") and answer_length in STAR_DETAILED_LENGTH_INSTRUCTIONS:
+        length = STAR_DETAILED_LENGTH_INSTRUCTIONS[answer_length]
+    else:
+        length = ANSWER_LENGTH_INSTRUCTIONS.get(answer_length, ANSWER_LENGTH_INSTRUCTIONS["medium"])
     return f"{mode} {length}"
 
 
