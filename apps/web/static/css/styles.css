@@ -2,6 +2,15 @@
 
 * { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
 
+/* Tailwind's CDN JIT emits its own h-screen utility AFTER arbitrary-value utilities
+   like h-[100dvh] in the generated stylesheet, so pairing the two classes on one
+   element does NOT let dvh win - h-screen's 100vh always wins the cascade. Both
+   declarations need to live in a single rule we author ourselves so the source
+   order is guaranteed: 100vh first as the fallback, 100dvh after so it overrides
+   on browsers that support it (unsupported values are dropped, not fallen back to,
+   per the CSS spec, so old browsers correctly keep the 100vh line). */
+.h-dvh-safe { height: 100vh; height: 100dvh; }
+
 .btn-primary {
   display: inline-flex; align-items: center; gap: 0.5rem;
   padding: 0.625rem 1.25rem; border-radius: 0.625rem;
