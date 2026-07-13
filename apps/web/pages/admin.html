@@ -80,6 +80,12 @@
 
 <script src="/assets/js/app.js?v=4"></script>
 <script>
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
   (async () => {
     const token = getToken();
     if (!token) {
@@ -105,8 +111,8 @@
       const tbody = document.getElementById('users-table-body');
       tbody.innerHTML = users.map(u => `
         <tr>
-          <td class="px-4 py-2.5">${u.display_name}</td>
-          <td class="px-4 py-2.5 text-gray-500">${u.email}</td>
+          <td class="px-4 py-2.5">${escapeHtml(u.display_name)}</td>
+          <td class="px-4 py-2.5 text-gray-500">${escapeHtml(u.email)}</td>
           <td class="px-4 py-2.5 text-gray-500">${new Date(u.created_at).toLocaleDateString()}</td>
         </tr>
       `).join('');
@@ -117,9 +123,9 @@
         document.getElementById('history-count').textContent = `${entries.length} shown`;
         document.getElementById('history-table-body').innerHTML = entries.map(e => `
           <tr>
-            <td class="px-4 py-2.5">${e.user_display_name}</td>
-            <td class="px-4 py-2.5 text-gray-500 truncate max-w-[140px]">${e.interview_title}</td>
-            <td class="px-4 py-2.5 text-gray-500 truncate max-w-[220px]" title="${e.question.replace(/"/g, '&quot;')}">${e.question}</td>
+            <td class="px-4 py-2.5">${escapeHtml(e.user_display_name)}</td>
+            <td class="px-4 py-2.5 text-gray-500 truncate max-w-[140px]">${escapeHtml(e.interview_title)}</td>
+            <td class="px-4 py-2.5 text-gray-500 truncate max-w-[220px]" title="${escapeHtml(e.question)}">${escapeHtml(e.question)}</td>
             <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${e.started_at ? new Date(e.started_at).toLocaleString() : '—'}</td>
             <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${e.first_chunk_at ? new Date(e.first_chunk_at).toLocaleString() : '—'}</td>
             <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${new Date(e.ended_at).toLocaleString()}</td>
