@@ -10,8 +10,25 @@
 </head>
 <body class="bg-white text-gray-900 antialiased h-screen overflow-hidden">
 
-<div class="h-screen flex overflow-hidden">
-  <aside class="w-56 shrink-0 border-r border-gray-200 flex flex-col bg-white">
+<div class="h-screen flex flex-col md:flex-row overflow-hidden">
+  <!-- Mobile-only top bar + slide-down menu - the sidebar below is desktop-only (md:flex),
+       so this is the sole way to reach Dashboard/History from a phone. -->
+  <div class="md:hidden flex items-center justify-between px-4 h-14 border-b border-gray-200 shrink-0">
+    <a href="/dashboard" class="flex items-center gap-2 font-semibold">
+      <i data-lucide="compass" class="text-purple-600 w-5 h-5"></i>ClearPilot
+    </a>
+    <button id="mobile-menu-btn" class="text-gray-500" aria-label="Menu">
+      <i data-lucide="menu" class="w-5 h-5"></i>
+    </button>
+  </div>
+  <div id="mobile-menu" class="md:hidden hidden border-b border-gray-200 px-3 py-3 space-y-1 shrink-0">
+    <a href="/dashboard" class="sidebar-link"><i data-lucide="layout-dashboard" class="w-4 h-4"></i>Dashboard</a>
+    <a href="/history" class="sidebar-link"><i data-lucide="history" class="w-4 h-4"></i>History</a>
+    <a href="/settings" class="sidebar-link active"><i data-lucide="settings" class="w-4 h-4"></i>Settings</a>
+    <div id="sidebar-user-mobile" class="border-t border-gray-200 mt-1 pt-1"></div>
+  </div>
+
+  <aside class="hidden md:flex w-56 shrink-0 border-r border-gray-200 flex-col bg-white">
     <div class="h-16 flex items-center px-5 border-b border-gray-200">
       <a href="/dashboard" class="flex items-center gap-2 font-semibold">
         <i data-lucide="compass" class="text-purple-600 w-5 h-5"></i>ClearPilot
@@ -28,7 +45,7 @@
   </aside>
 
   <main class="flex-1 overflow-y-auto">
-    <div class="max-w-2xl mx-auto px-8 py-10 space-y-6">
+    <div class="max-w-2xl mx-auto px-4 md:px-8 py-10 space-y-6">
       <h1 class="text-2xl font-semibold tracking-tight mb-6">Settings</h1>
 
       <section class="border border-gray-200 rounded-2xl p-5">
@@ -82,7 +99,7 @@
   </main>
 </div>
 
-<script src="/assets/js/app.js?v=2"></script>
+<script src="/assets/js/app.js?v=3"></script>
 <script>
   if (!requireAuthOrRedirect()) { /* redirected */ }
 

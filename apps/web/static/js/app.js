@@ -59,28 +59,47 @@ function requireAuthOrRedirect() {
   return true;
 }
 
+// Fills every matching slot (not just one id) so the same user info + logout control can
+// appear in both the desktop sidebar (#sidebar-user) and the mobile menu (#sidebar-user-mobile)
+// on pages that have both, without duplicating this fetch/render logic per page.
 async function renderSidebarUser() {
-  const slot = document.getElementById('sidebar-user');
-  if (!slot) return;
+  const slots = document.querySelectorAll('#sidebar-user, #sidebar-user-mobile');
+  if (slots.length === 0) return;
 
   const user = await fetchCurrentUser();
   if (!user) {
     window.location.href = '/login';
     return;
   }
-  slot.innerHTML = `
-    <div class="flex items-center justify-between px-3 py-2">
-      <span class="text-sm font-medium text-gray-700 truncate">${user.display_name}</span>
-      <button onclick="logout()" class="text-gray-400 hover:text-gray-700" title="Log out">
-        <i data-lucide="log-out" class="w-4 h-4"></i>
-      </button>
-    </div>
-  `;
+  slots.forEach((slot) => {
+    slot.innerHTML = `
+      <div class="flex items-center justify-between px-3 py-2">
+        <span class="text-sm font-medium text-gray-700 truncate">${user.display_name}</span>
+        <button onclick="logout()" class="text-gray-400 hover:text-gray-700" title="Log out">
+          <i data-lucide="log-out" class="w-4 h-4"></i>
+        </button>
+      </div>
+    `;
+  });
   if (window.lucide) lucide.createIcons();
+}
+
+// Opt-in per page: pages with a sidebar (dashboard/history/settings) include a mobile-only
+// top bar with a hamburger button (#mobile-menu-btn) that toggles a slide-down nav
+// (#mobile-menu) - the sidebar itself is desktop-only (hidden below the md breakpoint), so
+// this is the only way to move between Dashboard/History/Settings on a phone. Interview.html
+// deliberately doesn't have this - its "All interviews" back-link already covers navigation
+// for that page.
+function initMobileMenu() {
+  const btn = document.getElementById('mobile-menu-btn');
+  const menu = document.getElementById('mobile-menu');
+  if (!btn || !menu) return;
+  btn.addEventListener('click', () => menu.classList.toggle('hidden'));
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   renderNavAuth();
   renderSidebarUser();
+  initMobileMenu();
   if (window.lucide) lucide.createIcons();
 });
