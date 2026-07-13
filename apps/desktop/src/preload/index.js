@@ -29,6 +29,8 @@ contextBridge.exposeInMainWorld('clearpilot', {
 
   listSubjects: () => ipcRenderer.invoke('subjects:list'),
   listInterviews: () => ipcRenderer.invoke('interviews:list'),
+  getAdminUsers: () => ipcRenderer.invoke('admin:getUsers'),
+  getAdminHistory: () => ipcRenderer.invoke('admin:getHistory'),
   createInterview: (title, subjectIds) => ipcRenderer.invoke('interviews:create', { title, subjectIds }),
   updateInterview: (interviewId, updates) => ipcRenderer.invoke('interviews:update', { interviewId, updates }),
   deleteInterview: (interviewId) => ipcRenderer.invoke('interviews:delete', { interviewId }),

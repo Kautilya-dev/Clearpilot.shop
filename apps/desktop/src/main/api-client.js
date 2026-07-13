@@ -33,6 +33,22 @@ async function getCurrentUser(token) {
   return res.json() // { id, email, display_name }
 }
 
+async function getAdminUsers(token) {
+  const res = await fetch(`${BASE_URL}/api/admin/users`, {
+    headers: { Authorization: `Bearer ${token}` }
+  })
+  if (!res.ok) throw new Error(await parseErrorDetail(res)) // 403 detail is literally "Admin access required"
+  return res.json()
+}
+
+async function getAdminHistory(token) {
+  const res = await fetch(`${BASE_URL}/api/admin/history`, {
+    headers: { Authorization: `Bearer ${token}` }
+  })
+  if (!res.ok) throw new Error(await parseErrorDetail(res))
+  return res.json()
+}
+
 async function listInterviews(token) {
   const res = await fetch(`${BASE_URL}/api/interviews`, {
     headers: { Authorization: `Bearer ${token}` }
@@ -299,6 +315,8 @@ module.exports = {
   BASE_URL,
   desktopExchange,
   getCurrentUser,
+  getAdminUsers,
+  getAdminHistory,
   updateProfile,
   updatePreferences,
   changePassword,

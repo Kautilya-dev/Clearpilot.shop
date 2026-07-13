@@ -263,6 +263,30 @@ function registerIpcHandlers() {
     }
   })
 
+  ipcMain.handle('admin:getUsers', async () => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      const users = await apiClient.getAdminUsers(token)
+      return { success: true, users }
+    } catch (error) {
+      // error.message is the backend's HTTPException detail verbatim (e.g. "Admin access
+      // required" on 403) - AdminScreen matches on that exact string to show the denied state.
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('admin:getHistory', async () => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false, error: 'Not signed in' }
+    try {
+      const entries = await apiClient.getAdminHistory(token)
+      return { success: true, entries }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
   ipcMain.handle('interviews:create', async (event, { title, subjectIds }) => {
     const token = authStore.getCachedToken()
     if (!token) return { success: false, error: 'Not signed in' }

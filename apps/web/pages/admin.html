@@ -37,7 +37,7 @@
       <h2 class="font-medium">Users</h2>
       <span id="user-count" class="text-sm text-gray-500"></span>
     </div>
-    <div class="border border-gray-200 rounded-2xl overflow-x-auto">
+    <div class="border border-gray-200 rounded-2xl overflow-x-auto mb-10">
       <table class="w-full text-sm">
         <thead class="bg-gray-50 text-left text-gray-500">
           <tr>
@@ -47,6 +47,32 @@
           </tr>
         </thead>
         <tbody id="users-table-body" class="divide-y divide-gray-100"></tbody>
+      </table>
+    </div>
+
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="font-medium">AI Response Times</h2>
+      <span id="history-count" class="text-sm text-gray-500"></span>
+    </div>
+    <p class="text-xs text-gray-500 mb-4">
+      Only covers typed Copilot questions (web + desktop) - both go through the same backend
+      endpoint that records timing. Voice-driven answers and Job Mode aren't logged here.
+    </p>
+    <div class="border border-gray-200 rounded-2xl overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-left text-gray-500">
+          <tr>
+            <th class="px-4 py-2.5 font-medium">User</th>
+            <th class="px-4 py-2.5 font-medium">Interview</th>
+            <th class="px-4 py-2.5 font-medium">Question</th>
+            <th class="px-4 py-2.5 font-medium">Asked at</th>
+            <th class="px-4 py-2.5 font-medium">First letter at</th>
+            <th class="px-4 py-2.5 font-medium">Ended at</th>
+            <th class="px-4 py-2.5 font-medium">First chunk</th>
+            <th class="px-4 py-2.5 font-medium">Duration</th>
+          </tr>
+        </thead>
+        <tbody id="history-table-body" class="divide-y divide-gray-100"></tbody>
       </table>
     </div>
   </div>
@@ -84,6 +110,24 @@
           <td class="px-4 py-2.5 text-gray-500">${new Date(u.created_at).toLocaleDateString()}</td>
         </tr>
       `).join('');
+
+      const historyRes = await fetch('/api/admin/history', { headers: { Authorization: `Bearer ${token}` } });
+      if (historyRes.ok) {
+        const entries = await historyRes.json();
+        document.getElementById('history-count').textContent = `${entries.length} shown`;
+        document.getElementById('history-table-body').innerHTML = entries.map(e => `
+          <tr>
+            <td class="px-4 py-2.5">${e.user_display_name}</td>
+            <td class="px-4 py-2.5 text-gray-500 truncate max-w-[140px]">${e.interview_title}</td>
+            <td class="px-4 py-2.5 text-gray-500 truncate max-w-[220px]" title="${e.question.replace(/"/g, '&quot;')}">${e.question}</td>
+            <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${e.started_at ? new Date(e.started_at).toLocaleString() : '—'}</td>
+            <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${e.first_chunk_at ? new Date(e.first_chunk_at).toLocaleString() : '—'}</td>
+            <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${new Date(e.ended_at).toLocaleString()}</td>
+            <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${e.time_to_first_chunk_ms != null ? `${e.time_to_first_chunk_ms}ms` : '—'}</td>
+            <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${e.duration_ms != null ? `${(e.duration_ms / 1000).toFixed(2)}s` : '—'}</td>
+          </tr>
+        `).join('');
+      }
 
       loading.classList.add('hidden');
       content.classList.remove('hidden');

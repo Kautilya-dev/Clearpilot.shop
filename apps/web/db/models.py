@@ -94,6 +94,11 @@ class HistoryEntry(Base):
     question: Mapped[str] = mapped_column(Text, nullable=False)
     answer: Mapped[str] = mapped_column(Text, nullable=False)
     sources: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # JSON-encoded list of {title, breadcrumb}
+    # Admin response-timing log (see routers/admin.py's /history endpoint) - nullable since
+    # rows saved before this was added have no timing data. created_at doubles as "ended at":
+    # it's set at INSERT time, which happens right after the stream finishes.
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    first_chunk_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 

@@ -4,6 +4,7 @@ import InterviewWorkspace from './InterviewWorkspace'
 import PickerScreen from './PickerScreen'
 import HistoryScreen from './HistoryScreen'
 import SettingsScreen from './SettingsScreen'
+import AdminScreen from './AdminScreen'
 import { applyStyles } from './applyStyles'
 
 // Thin draggable strip replacing the OS title bar (window is frameless).
@@ -33,7 +34,10 @@ function TitleBar() {
 const NAV_ITEMS = [
   { key: 'picker', label: 'My Interviews' },
   { key: 'history', label: 'History' },
-  { key: 'settings', label: 'Settings' }
+  { key: 'settings', label: 'Settings' },
+  // Shown to everyone, same as web's unlisted-but-reachable /admin - the real gate is
+  // server-side (require_admin in routers/admin.py); a non-admin just sees "access required".
+  { key: 'admin', label: 'Admin' }
 ]
 
 function Sidebar({ user, activeScreen, onNavigate, onLogout }) {
@@ -68,7 +72,7 @@ function Sidebar({ user, activeScreen, onNavigate, onLogout }) {
 }
 
 export default function App() {
-  const [screen, setScreen] = useState('loading') // loading | login | picker | history | settings | workspace
+  const [screen, setScreen] = useState('loading') // loading | login | picker | history | settings | admin | workspace
   const [user, setUser] = useState(null)
   const [waiting, setWaiting] = useState(false)
   const [error, setError] = useState('')
@@ -196,6 +200,7 @@ export default function App() {
             }}
           />
         )}
+        {screen === 'admin' && <AdminScreen />}
       </div>
     </div>
   )

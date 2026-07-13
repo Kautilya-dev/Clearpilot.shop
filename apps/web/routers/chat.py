@@ -58,8 +58,10 @@ async def ask(
 
     async def stream():
         started_monotonic = time.monotonic()
-        started_iso = _now_iso()
+        started_dt = datetime.now(timezone.utc)
+        started_iso = started_dt.isoformat()
         first_chunk_monotonic = None
+        first_chunk_dt = None
         full_text = ""
         sources_payload = []
         used_qa_bank = False
@@ -84,6 +86,7 @@ async def ask(
                     full_text = judged
                     used_qa_bank = True
                     first_chunk_monotonic = time.monotonic()
+                    first_chunk_dt = datetime.now(timezone.utc)
                     yield _sse({"type": "chunk", "text": full_text})
 
             if not used_qa_bank:
@@ -96,6 +99,7 @@ async def ask(
                     async for delta in generate_answer_stream(system_prompt, question):
                         if first_chunk_monotonic is None:
                             first_chunk_monotonic = time.monotonic()
+                            first_chunk_dt = datetime.now(timezone.utc)
                         full_text += delta
                         yield _sse({"type": "chunk", "text": delta})
                 except httpx.HTTPError as e:
@@ -110,6 +114,7 @@ async def ask(
             stream_db.add(HistoryEntry(
                 user_id=user_id, interview_id=interview_id, question=question, answer=full_text,
                 sources=json.dumps(sources_payload),
+                started_at=started_dt, first_chunk_at=first_chunk_dt,
             ))
             await stream_db.commit()
 
