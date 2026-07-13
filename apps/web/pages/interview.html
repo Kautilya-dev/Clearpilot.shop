@@ -172,6 +172,9 @@
     { type: 'job_description', label: 'Job description' },
     { type: 'real_time_scenario', label: 'Real-time scenarios' },
   ];
+  // Must match the prefix apps/web/routers/history.py writes for practice rounds -
+  // both Copilot (exclude) and Prompter (include-only) filter the shared /history feed by it.
+  const PRACTICE_QUESTION_PREFIX = 'Practice session with partner';
 
   function authHeaders(extra) {
     return Object.assign({ Authorization: `Bearer ${getToken()}` }, extra || {});
@@ -490,7 +493,11 @@
 
   async function loadConversationHistory() {
     const res = await fetch(`/api/interviews/${interviewId}/history?limit=200`, { headers: authHeaders() });
-    const entries = res.ok ? await res.json() : [];
+    const allEntries = res.ok ? await res.json() : [];
+    // /history is shared with the Prompter tab's practice-round log (see loadPrompterHistory
+    // below) - exclude those rows here so a practice session doesn't show up as a Copilot
+    // Q&A exchange.
+    const entries = allEntries.filter(e => !e.question.startsWith(PRACTICE_QUESTION_PREFIX));
     if (entries.length === 0) return;
     // API already returns newest-first - append each exchange in that order so the
     // newest ends up at the top of #conversation, oldest at the bottom.
@@ -700,7 +707,7 @@
     listEl.innerHTML = '<p class="text-sm text-gray-400 text-center py-12">Loading…</p>';
     const res = await fetch(`/api/interviews/${interviewId}/history?limit=200`, { headers: authHeaders() });
     const entries = res.ok ? await res.json() : [];
-    const practiceEntries = entries.filter((e) => e.question.startsWith('Practice session with partner'));
+    const practiceEntries = entries.filter((e) => e.question.startsWith(PRACTICE_QUESTION_PREFIX));
     if (practiceEntries.length === 0) {
       listEl.innerHTML = '<p class="text-sm text-gray-400 text-center py-12">No past practice rounds yet.</p>';
       return;

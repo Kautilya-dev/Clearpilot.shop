@@ -78,16 +78,21 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
     if (activeTab !== 'copilot') return
     window.clearpilot.getHistory(interview.id, 100).then((res) => {
       if (res.success && res.entries?.length) {
+        // /history is shared with Practice Partner's saved rounds (see savePracticeRound
+        // above, apps/web/routers/history.py) - exclude those here so a practice round
+        // doesn't show up as a Copilot Q&A exchange.
         setHistory(
-          res.entries.map((entry) => ({
-            question: entry.question,
-            html: renderMarkdown(entry.answer || ''),
-            sources: entry.sources || [],
-            badge: entry.from_qa_bank ? 'From your Q&A' : null,
-            timing: entry.started_at
-              ? { started_at: entry.started_at, time_to_first_chunk_ms: entry.time_to_first_chunk_ms, duration_ms: entry.duration_ms }
-              : null
-          }))
+          res.entries
+            .filter((entry) => !entry.question.startsWith('Practice session with partner'))
+            .map((entry) => ({
+              question: entry.question,
+              html: renderMarkdown(entry.answer || ''),
+              sources: entry.sources || [],
+              badge: entry.from_qa_bank ? 'From your Q&A' : null,
+              timing: entry.started_at
+                ? { started_at: entry.started_at, time_to_first_chunk_ms: entry.time_to_first_chunk_ms, duration_ms: entry.duration_ms }
+                : null
+            }))
         )
       }
       setHistoryLoading(false)
