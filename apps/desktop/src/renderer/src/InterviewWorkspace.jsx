@@ -359,7 +359,7 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col overflow-hidden min-h-0">
       {!focusMode && (
         <div className="border-b border-gray-200 px-8 pt-4 shrink-0">
           <button onClick={onBack} className="text-xs text-gray-400 hover:text-gray-600 inline-flex items-center gap-1 mb-2">

@@ -80,8 +80,8 @@ export default function CopilotScreen({
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      <div ref={conversationRef} className="flex-1 overflow-y-auto px-8 py-6 space-y-5">
+    <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+      <div ref={conversationRef} className="flex-1 overflow-y-auto px-8 py-6 space-y-5 min-h-0">
         {streaming && (
           <div className="space-y-3 pb-5 border-b border-gray-100">
             <div className="flex justify-end items-start gap-2">

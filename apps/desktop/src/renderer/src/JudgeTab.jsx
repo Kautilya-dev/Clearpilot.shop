@@ -45,7 +45,7 @@ export default function JudgeTab({
   const active = jobMode || partnerMode
 
   return (
-    <div className="flex-1 flex overflow-hidden">
+    <div className="flex-1 flex overflow-hidden min-h-0">
       {partnerMode && (
         <div className="w-72 shrink-0 border-r border-gray-200 flex flex-col overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 shrink-0">
@@ -57,7 +57,7 @@ export default function JudgeTab({
               </span>
             </p>
           </div>
-          <div className="flex-1 overflow-y-auto px-4 py-3">
+          <div className="flex-1 overflow-y-auto px-4 py-3 min-h-0">
             {jobCurrent.suggestion ? (
               <p className="text-sm text-gray-700 whitespace-pre-wrap">{jobCurrent.suggestion}</p>
             ) : (
@@ -68,9 +68,9 @@ export default function JudgeTab({
           </div>
         </div>
       )}
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col overflow-hidden min-h-0">
       {/* Conversation area */}
-      <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
+      <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6 min-h-0">
         {/* In-progress round */}
         {active && (jobCurrent.question || jobCurrent.suggestion || jobCurrent.response) && (
           <div className="space-y-3 pb-5 border-b border-gray-100 opacity-80">

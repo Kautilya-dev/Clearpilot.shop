@@ -208,7 +208,7 @@ export default function FocusWidget({
       : `Listening : ${micDeviceName || 'Microphone'}`
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-white">
+    <div className="flex-1 flex flex-col overflow-hidden bg-white min-h-0">
       {/* Draggable strip - same WebkitAppRegion trick as App.jsx's TitleBar, the only way to
           move this frameless window. */}
       <div
@@ -279,7 +279,7 @@ export default function FocusWidget({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0">
         {panel && (
           <div className="space-y-3">
             <button

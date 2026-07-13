@@ -171,7 +171,7 @@ export default function App() {
   return (
     <div className="h-screen flex flex-col overflow-hidden font-sans">
       {!focusMode && <TitleBar />}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden min-h-0">
         {!focusMode && (
           <Sidebar user={user} activeScreen={screen} onNavigate={handleNavigate} onLogout={handleLogout} />
         )}
