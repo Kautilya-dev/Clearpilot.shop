@@ -123,10 +123,14 @@ export default function FocusWidget({
   jobCurrent,
   jobRounds,
   pinnedRoundIds,
-  onToggleRoundPin
+  onToggleRoundPin,
+  guestConnected
 }) {
   const [sessionStarted, setSessionStarted] = useState(listenMode !== 'off')
   const [selectedDevice, setSelectedDevice] = useState('mic')
+  // Job Mode's own choice, mirroring the device picker's role for Copilot - 'both' (AI
+  // suggests the answer) or 'partner' (a real person on the web app's Prompter tab does).
+  const [selectedJudgeMode, setSelectedJudgeMode] = useState('both')
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [qaCardCollapsed, setQaCardCollapsed] = useState(false)
   const [qaCardHidden, setQaCardHidden] = useState(false)
@@ -161,6 +165,7 @@ export default function FocusWidget({
     if (listening) {
       setSessionStarted(true)
       if (listenMode === 'mic' || listenMode === 'speaker') setSelectedDevice(listenMode)
+      if (listenMode === 'both' || listenMode === 'partner') setSelectedJudgeMode(listenMode)
     }
   }, [listening, listenMode])
 
@@ -180,7 +185,7 @@ export default function FocusWidget({
 
   async function handleStartSession() {
     setSessionStarted(true)
-    await onStartListening(source === 'judge' ? 'both' : selectedDevice)
+    await onStartListening(source === 'judge' ? selectedJudgeMode : selectedDevice)
   }
 
   async function handleStopSession() {
@@ -314,6 +319,30 @@ export default function FocusWidget({
                 })}
               </div>
             )}
+            {source === 'judge' && (
+              <div className="flex items-center gap-2 justify-center">
+                {[
+                  { key: 'both', label: 'Job Mode' },
+                  { key: 'partner', label: 'Practice partner' }
+                ].map((mode) => {
+                  const active = selectedJudgeMode === mode.key
+                  return (
+                    <button
+                      key={mode.key}
+                      type="button"
+                      onClick={() => setSelectedJudgeMode(mode.key)}
+                      className={`text-xs px-2.5 py-1 rounded-lg border ${
+                        active
+                          ? 'border-purple-500 bg-purple-50 text-purple-700'
+                          : 'border-gray-200 text-gray-500 hover:border-purple-300'
+                      }`}
+                    >
+                      {mode.label}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
             <button
               type="button"
               onClick={handleStartSession}
@@ -381,6 +410,27 @@ export default function FocusWidget({
                     />
                   </div>
                 )}
+              </div>
+            )}
+
+            {source === 'judge' && listenMode === 'partner' && (
+              <div className="border border-gray-200 rounded-xl overflow-hidden">
+                <div className="flex items-center justify-between gap-2 px-3 py-2 bg-gray-50 border-b border-gray-100">
+                  <span className="text-xs font-medium text-gray-600">Teleprompter</span>
+                  <span className="flex items-center gap-1 text-[10px]">
+                    <span className={`w-1.5 h-1.5 rounded-full ${guestConnected ? 'bg-green-500' : 'bg-gray-300'}`} />
+                    <span className={guestConnected ? 'text-green-700' : 'text-gray-400'}>
+                      {guestConnected ? 'Connected' : 'Waiting…'}
+                    </span>
+                  </span>
+                </div>
+                <div className="px-3 py-2.5">
+                  {jobCurrent.suggestion ? (
+                    <p className="text-xs text-gray-700 whitespace-pre-wrap">{jobCurrent.suggestion}</p>
+                  ) : (
+                    <p className="text-xs text-gray-400">Waiting for your partner to speak…</p>
+                  )}
+                </div>
               </div>
             )}
 

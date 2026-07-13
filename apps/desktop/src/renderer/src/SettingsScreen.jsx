@@ -64,6 +64,16 @@ function OpenAITab() {
 export default function SettingsScreen({ user, onProfileUpdated, onAccountDeleted }) {
   const [activeTab, setActiveTab] = useState('account')
 
+  // Account fields (display name, Answer Template preferences) are shared with the web app -
+  // the `user` prop is only as fresh as the last login or local save, so every time Settings
+  // is opened, pull the latest from the server in case it changed elsewhere. Fails silently on
+  // a network hiccup - the possibly-stale prop is still shown rather than nothing.
+  useEffect(() => {
+    window.clearpilot.refreshCurrentUser().then((res) => {
+      if (res.success) onProfileUpdated(res.user)
+    })
+  }, [])
+
   return (
     <main className="flex-1 overflow-y-auto">
       <div className="max-w-xl mx-auto px-8 py-10">

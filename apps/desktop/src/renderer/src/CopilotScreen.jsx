@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Send, Mic, Volume2, Focus } from 'lucide-react'
+import { Send, Mic, Volume2, Focus, X } from 'lucide-react'
 
 const DEVICES = [
   { key: 'mic', label: 'Mic', icon: Mic },
@@ -34,6 +34,7 @@ export default function CopilotScreen({
   streaming,
   error,
   onSubmit,
+  onDismiss,
   listenMode,
   speakerLevel,
   speakerDeviceName,
@@ -47,10 +48,21 @@ export default function CopilotScreen({
 }) {
   const [input, setInput] = useState('')
   const conversationRef = useRef(null)
+  const textareaRef = useRef(null)
 
   useEffect(() => {
     conversationRef.current?.scrollTo({ top: 0 })
   }, [streaming, history])
+
+  // Auto-grows with content like ChatGPT/Claude's input, up to a cap - re-runs on every
+  // `input` change (typing AND the programmatic clear-on-submit below) so the box always
+  // shrinks back to one line after sending, not just when the user deletes text by hand.
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+  }, [input])
 
   function handleSubmit(e) {
     e.preventDefault()
@@ -60,15 +72,30 @@ export default function CopilotScreen({
     onSubmit(question)
   }
 
+  function handleKeyDown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSubmit(e)
+    }
+  }
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div ref={conversationRef} className="flex-1 overflow-y-auto px-8 py-6 space-y-5">
         {streaming && (
           <div className="space-y-3 pb-5 border-b border-gray-100">
-            <div className="flex justify-end">
+            <div className="flex justify-end items-start gap-2">
               <div className="rounded-2xl rounded-br-md px-4 py-2.5 max-w-[80%]" style={QUESTION_STYLE}>
                 {streaming.question}
               </div>
+              <button
+                type="button"
+                onClick={onDismiss}
+                title="Dismiss and ask something else"
+                className="shrink-0 mt-1 text-gray-400 hover:text-red-500"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
             <div
               className="border border-gray-100 rounded-2xl rounded-bl-md px-4 py-3 max-w-[85%] answer-text"
@@ -180,16 +207,20 @@ export default function CopilotScreen({
         {listenError && <p className="text-xs text-red-600">{listenError}</p>}
         {error && <p className="text-xs text-red-600">{error}</p>}
         <form onSubmit={handleSubmit} className="flex items-end gap-2">
-          <input
+          <textarea
+            ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            className="field-input flex-1"
+            onKeyDown={handleKeyDown}
+            rows={1}
+            className="field-input flex-1 resize-none"
+            style={{ maxHeight: '160px', overflowY: 'auto' }}
             placeholder="Ask an interview question..."
           />
           <button
             type="submit"
             disabled={!!streaming}
-            className="bg-purple-600 text-white rounded-lg px-4 py-2.5 disabled:opacity-50"
+            className="bg-purple-600 text-white rounded-lg px-4 py-2.5 disabled:opacity-50 shrink-0"
           >
             <Send className="w-4 h-4" />
           </button>

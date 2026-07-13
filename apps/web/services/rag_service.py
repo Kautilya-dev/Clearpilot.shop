@@ -18,9 +18,9 @@ CRITICAL RULES:
 1. Answer in first person, as the candidate ("I configured...", "In my last project, I..."), never describing them in third person.
 2. Ground every technical claim in the reference material, resume, and scenarios below. Do not invent technologies, projects, metrics, or experience that aren't supported by them.
 3. If neither the resume nor the reference material covers what's being asked, say so honestly (e.g. "I haven't worked directly with that") rather than making something up. Never fabricate.
-4. Give thorough, detailed answers - explain the reasoning and configuration steps in depth, and include a concrete example or scenario where the material supports one. Favor longer, complete answers over short ones; when unsure whether to add more depth, add it.
-5. Use markdown to make longer answers easy to scan: **bold** for key terms, numbered or bulleted lists for multi-step processes. Keep the language natural and first-person, not a dry reference doc.
-6. Every **bolded** key term must be immediately followed by a short, concrete example, mini-scenario, or plain-language explanation of what it means and how it was used - e.g. "I used **Content Modifier** to enrich the message (for example, stamping a `correlationId` header onto every payload for end-to-end tracing)." Never bold a term and move on without unpacking it - the candidate needs to be able to explain that term unprompted if the interviewer digs in on it.
+4. Keep every answer interview-perfect: complete and confident, but paced the way a real spoken interview answer sounds - see the word-count target below (roughly one minute by default). Treat that target as a FLOOR, not just a ceiling - a two-sentence summary is a failure even under "medium," because it doesn't sound like a complete interview answer. Reach the target by actually explaining the reasoning and walking through one concrete example in real detail, not by padding with filler. Pick the 2-3 points that matter most rather than trying to cover everything; a focused one-minute answer beats a long one that loses the interviewer's attention.
+5. Use markdown to make the answer easy to scan: **bold** for key terms, numbered or bulleted lists for multi-step processes. Keep the language natural and first-person, not a dry reference doc.
+6. Every **bolded** key term must be immediately followed by a short, concrete example, mini-scenario, or plain-language explanation of what it means and how it was used - e.g. "I used **Content Modifier** to enrich the message (for example, stamping a `correlationId` header onto every payload for end-to-end tracing)." Never bold a term and move on without unpacking it. In a tight answer this means bolding only the 1-2 terms that matter most, not every possible one, so the example still fits inside the word-count target.
 {resume_section}{jd_section}{scenario_section}
 REFERENCE MATERIAL (official documentation for this interview's subjects):
 {doc_context}"""
@@ -80,15 +80,20 @@ async def get_active_material(db: AsyncSession, interview_id: UUID, material_typ
 
 
 FORMAT_MODE_INSTRUCTIONS = {
-    "bullets": "Structure the answer as bullet points covering the key ideas - each bullet that introduces a **bolded** term should also unpack it with a brief example.",
-    "star": "Structure the answer using the STAR method: Situation, Task, Action, Result, labelling each part - flesh each part out with specifics rather than one-line summaries.",
-    "concise": "Give a single, direct one-sentence answer with no elaboration.",
-    "detailed": "Give a fuller, elaborate explanation: walk through the reasoning and configuration steps in depth, and for every **bolded** key term include a concrete code/configuration example or worked mini-scenario right where it's introduced, not just a definition.",
+    "bullets": "Structure the answer as bullet points covering the key ideas - the bullet that introduces a **bolded** term should also unpack it with a brief example.",
+    "star": "Structure the answer using the STAR method: Situation, Task, Action, Result, labelling each part - keep each part to a sentence or two so the whole thing still fits the word-count target below.",
+    "concise": "Give a single, direct sentence with no elaboration - even shorter than the word-count target below.",
+    "detailed": "Give a fuller explanation with real reasoning and a fully worked example - reach the word-count target below by going deeper on the 1-2 most important terms, not by trimming to a quick summary.",
 }
+# Calibrated to actual spoken duration (~130-150 words/minute at a natural, measured interview
+# pace) rather than vague sentence counts, so "medium" reliably produces the interview-perfect
+# one-minute answer regardless of which format above shapes its structure. Each range's lower
+# bound is a floor to explicitly guard against the model's tendency to undershoot a loose
+# "roughly N words" target and default to a short summary instead.
 ANSWER_LENGTH_INSTRUCTIONS = {
-    "short": "Keep it to no more than 3 sentences or bullet points total.",
-    "medium": "Keep it to roughly 4-6 sentences or bullet points total.",
-    "long": "Go long and thorough - roughly 10-15 sentences or bullet points, covering the reasoning, a worked example, and any relevant edge case or gotcha, so the candidate has enough material to speak on this for a couple of minutes if the interviewer asks them to elaborate.",
+    "short": "Write at least 50 words, up to about 70 (roughly 20-30 seconds spoken aloud) - the fastest version, but still one full, complete sentence or two, not a fragment.",
+    "medium": "Write at least 130 words, up to about 160 (roughly one minute spoken aloud) - the interview-perfect default. 130 words is a floor: if your answer is shorter, you stopped too early - go back and actually explain the reasoning and walk through one concrete example, don't just pad it. This should read as 4-6 full sentences of real substance, never a 2-sentence summary.",
+    "long": "Write at least 200 words, up to about 260 (roughly 90 seconds spoken aloud) - use this only when the question genuinely needs more depth (a multi-part scenario, a comparison). 200 words is a floor - go deeper with a second example or edge case rather than repeating the same point to pad it out.",
 }
 
 

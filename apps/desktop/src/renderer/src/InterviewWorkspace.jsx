@@ -68,9 +68,14 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
     })
   }
 
-  // Load past conversation when entering the workspace so the user can continue
-  // exactly where they left off. Entries arrive newest-first from the API.
+  // Load past conversation so the user can continue exactly where they left off - re-runs
+  // every time the Copilot tab itself is opened (not just on first mount), so a question
+  // asked from the web app (or another device) while this one sat open on a different tab
+  // shows up here without needing a restart. Entries arrive newest-first from the API.
+  // Safe to just overwrite `history` even mid-stream - the in-progress exchange lives in the
+  // separate `streaming` state until it finishes, so a refetch here can't clobber it.
   useEffect(() => {
+    if (activeTab !== 'copilot') return
     window.clearpilot.getHistory(interview.id, 100).then((res) => {
       if (res.success && res.entries?.length) {
         setHistory(
@@ -87,7 +92,7 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
       }
       setHistoryLoading(false)
     })
-  }, [interview.id])
+  }, [interview.id, activeTab])
 
   useEffect(() => {
     function flushRender() {
@@ -130,6 +135,33 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
   }, [])
 
   const speakerTranscriptRef = useRef('')
+  // The Realtime API fires the mic's transcription-completed and response-done events as
+  // two independent streams with no ordering guarantee - the judge's feedback can arrive
+  // before the transcript of what the candidate actually said. Discovered from a real saved
+  // Practice Partner round whose "Your response" came back empty even though the feedback
+  // clearly reacted to real speech. These hold a feedback that arrived first until the
+  // matching transcript catches up (or a short timeout elapses, so a round can't get stuck).
+  const pendingMicFeedbackRef = useRef(null)
+  const pendingMicFeedbackTimeoutRef = useRef(null)
+
+  function finalizeMicRound(feedbackText) {
+    const round = {
+      id: ++roundIdRef.current,
+      question: jobCurrentRef.current.question,
+      suggestion: jobCurrentRef.current.suggestion,
+      response: jobCurrentRef.current.response,
+      feedback: feedbackText
+    }
+    const wasPartnerRound = listenModeRef.current === 'partner'
+    jobCurrentRef.current = { question: '', suggestion: '', response: '' }
+    setJobCurrent({ question: '', suggestion: '', response: '', feedback: '' })
+    setJobRounds((r) => [round, ...r])
+    // Regular AI-vs-candidate Job Mode rounds aren't persisted (matches existing behavior) -
+    // only practice-partner rounds get saved to History.
+    if (wasPartnerRound) {
+      window.clearpilot.savePracticeRound(interview.id, round.suggestion, round.response, feedbackText)
+    }
+  }
 
   useEffect(() => {
     window.clearpilot.onListeningQuestion(({ source, text }) => {
@@ -144,6 +176,14 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
         // What the candidate actually said in Job Mode
         jobCurrentRef.current.response = text
         setJobCurrent((c) => ({ ...c, response: text }))
+        // The judge's feedback may already be waiting on this exact transcript - see the
+        // pendingMicFeedbackRef comment above.
+        if (pendingMicFeedbackRef.current !== null) {
+          clearTimeout(pendingMicFeedbackTimeoutRef.current)
+          const feedbackText = pendingMicFeedbackRef.current
+          pendingMicFeedbackRef.current = null
+          finalizeMicRound(feedbackText)
+        }
       }
     })
 
@@ -172,22 +212,22 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
         }
       } else if (source === 'mic') {
         if (listenModeRef.current === 'both' || listenModeRef.current === 'partner') {
-          // Job Mode: mic GPT answer is the judge's feedback — finalize the round
-          const round = {
-            id: ++roundIdRef.current,
-            question: jobCurrentRef.current.question,
-            suggestion: jobCurrentRef.current.suggestion,
-            response: jobCurrentRef.current.response,
-            feedback: text
-          }
-          const wasPartnerRound = listenModeRef.current === 'partner'
-          jobCurrentRef.current = { question: '', suggestion: '', response: '' }
-          setJobCurrent({ question: '', suggestion: '', response: '', feedback: '' })
-          setJobRounds((r) => [round, ...r])
-          // Regular AI-vs-candidate Job Mode rounds aren't persisted (matches existing
-          // behavior) - only practice-partner rounds get saved to History.
-          if (wasPartnerRound) {
-            window.clearpilot.savePracticeRound(interview.id, round.suggestion, round.response, text)
+          // Job Mode: mic GPT answer is the judge's feedback. Usually the response transcript
+          // (onListeningQuestion's mic branch above) has already arrived by now - finalize
+          // right away. But the Realtime API doesn't guarantee that order, so if it hasn't,
+          // hold this feedback and let the transcript's arrival finalize the round instead
+          // (with a timeout fallback in case the transcript never shows up at all).
+          if (jobCurrentRef.current.response) {
+            finalizeMicRound(text)
+          } else {
+            pendingMicFeedbackRef.current = text
+            pendingMicFeedbackTimeoutRef.current = setTimeout(() => {
+              if (pendingMicFeedbackRef.current !== null) {
+                const feedbackText = pendingMicFeedbackRef.current
+                pendingMicFeedbackRef.current = null
+                finalizeMicRound(feedbackText)
+              }
+            }, 2500)
           }
         } else {
           // Copilot mode: push mic answer directly into conversation history
@@ -235,6 +275,19 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
       setChatError(res.error || 'Could not reach ClearPilot')
       setStreaming(null)
     }
+  }
+
+  // Dismisses the in-progress answer so a new question can be asked immediately, without
+  // waiting for streaming to finish. Client-side only - the backend keeps generating and
+  // still saves the answer to History (it'll show up next time History refetches), this just
+  // stops the renderer from displaying/waiting on it. Safe because the chat:event handler
+  // above already guards every state update with "if (s)" checks against the CURRENT
+  // streaming value, so late chunks/done events for the dismissed answer become no-ops
+  // instead of reappearing or double-saving.
+  function dismissStreaming() {
+    isBusyRef.current = false
+    setStreaming(null)
+    setChatError('')
   }
 
   async function startListening(source) {
@@ -347,6 +400,7 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
           streaming={streaming}
           error={chatError}
           onSubmit={submitQuestion}
+          onDismiss={dismissStreaming}
           listenMode={listenMode}
           speakerLevel={audioCapture.speakerLevel}
           speakerDeviceName={audioCapture.speakerDeviceName}
@@ -395,6 +449,7 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
           jobRounds={jobRounds}
           pinnedRoundIds={pinnedRoundIds}
           onToggleRoundPin={toggleRoundPin}
+          guestConnected={guestConnected}
         />
       )}
     </div>

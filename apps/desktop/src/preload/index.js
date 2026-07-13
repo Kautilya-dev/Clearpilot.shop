@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('clearpilot', {
 
   openBrowserSignIn: () => ipcRenderer.invoke('auth:openBrowserSignIn'),
   getCurrentUser: () => ipcRenderer.invoke('auth:getCurrentUser'),
+  refreshCurrentUser: () => ipcRenderer.invoke('auth:refreshCurrentUser'),
   logout: () => ipcRenderer.invoke('auth:logout'),
   onLoggedIn: (callback) => {
     ipcRenderer.on('auth:loggedIn', (event, user) => callback(user))

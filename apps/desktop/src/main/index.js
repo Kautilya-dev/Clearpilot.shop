@@ -178,6 +178,23 @@ function registerIpcHandlers() {
     return { success: true }
   })
 
+  // Unlike auth:getCurrentUser above, this always hits the network - that one returns
+  // authStore's in-memory cache when present, which is exactly wrong for "did this account's
+  // preferences change on another device/the web app" checks. Settings screens call this on
+  // mount so opening Settings always reflects the latest account state, not a stale login-time
+  // snapshot.
+  ipcMain.handle('auth:refreshCurrentUser', async () => {
+    const token = authStore.getCachedToken()
+    if (!token) return { success: false }
+    try {
+      const user = await apiClient.getCurrentUser(token)
+      authStore.setSession(token, user)
+      return { success: true, user }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
   ipcMain.handle('profile:update', async (event, { displayName }) => {
     const token = authStore.getCachedToken()
     if (!token) return { success: false, error: 'Not signed in' }
@@ -495,15 +512,20 @@ function registerIpcHandlers() {
   // generated ANSWER only. Deliberately not applied to JUDGE_INITIAL_INSTRUCTIONS /
   // judgeInstructionsWithSuggestion below, which are coaching commentary, not an answer.
   const FORMAT_MODE_INSTRUCTIONS = {
-    bullets: 'Structure the answer as bullet points covering the key ideas - each bullet that introduces a **bolded** term should also unpack it with a brief example.',
-    star: 'Structure the answer using the STAR method: Situation, Task, Action, Result, labelling each part - flesh each part out with specifics rather than one-line summaries.',
-    concise: 'Give a single, direct one-sentence answer with no elaboration.',
-    detailed: "Give a fuller, elaborate explanation: walk through the reasoning and configuration steps in depth, and for every **bolded** key term include a concrete code/configuration example or worked mini-scenario right where it's introduced, not just a definition."
+    bullets: 'Structure the answer as bullet points covering the key ideas - the bullet that introduces a **bolded** term should also unpack it with a brief example.',
+    star: 'Structure the answer using the STAR method: Situation, Task, Action, Result, labelling each part - keep each part to a sentence or two so the whole thing still fits the word-count target below.',
+    concise: 'Give a single, direct sentence with no elaboration - even shorter than the word-count target below.',
+    detailed: "Give a fuller explanation with real reasoning and a fully worked example - reach the word-count target below by going deeper on the 1-2 most important terms, not by trimming to a quick summary."
   }
+  // Calibrated to actual spoken duration (~130-150 words/minute at a natural, measured
+  // interview pace) rather than vague sentence counts, so "medium" reliably produces the
+  // interview-perfect one-minute answer regardless of which format above shapes its structure.
+  // Each range's lower bound is a floor to explicitly guard against the model's tendency to
+  // undershoot a loose "roughly N words" target and default to a short summary instead.
   const ANSWER_LENGTH_INSTRUCTIONS = {
-    short: 'Keep it to no more than 3 sentences or bullet points total.',
-    medium: 'Keep it to roughly 4-6 sentences or bullet points total.',
-    long: 'Go long and thorough - roughly 10-15 sentences or bullet points, covering the reasoning, a worked example, and any relevant edge case or gotcha, so the candidate has enough material to speak on this for a couple of minutes if the interviewer asks them to elaborate.'
+    short: 'Write at least 50 words, up to about 70 (roughly 20-30 seconds spoken aloud) - the fastest version, but still one full, complete sentence or two, not a fragment.',
+    medium: 'Write at least 130 words, up to about 160 (roughly one minute spoken aloud) - the interview-perfect default. 130 words is a floor: if your answer is shorter, you stopped too early - go back and actually explain the reasoning and walk through one concrete example, don\'t just pad it. This should read as 4-6 full sentences of real substance, never a 2-sentence summary.',
+    long: 'Write at least 200 words, up to about 260 (roughly 90 seconds spoken aloud) - use this only when the question genuinely needs more depth (a multi-part scenario, a comparison). 200 words is a floor - go deeper with a second example or edge case rather than repeating the same point to pad it out.'
   }
 
   function buildAnswerTemplateInstruction(answerFormatMode, answerLength) {
@@ -648,8 +670,12 @@ function registerIpcHandlers() {
     }
     isJobMode = false
     isPartnerMode = false
-    const instructions = source === 'speaker' ? sapInstructions : JUDGE_INITIAL_INSTRUCTIONS
-    return startSingleSession(interviewId, source, instructions)
+    // Copilot mode (single device, not Job Mode): both Speaker and Mic are alternative ways
+    // to ASK the same Copilot a question and get a real SAP CPI answer - Mic used to get
+    // JUDGE_INITIAL_INSTRUCTIONS (coaching feedback), which only makes sense in Job Mode
+    // where there's a suggested answer to compare against. Here there isn't one - the
+    // candidate is just asking, exactly like Speaker already does.
+    return startSingleSession(interviewId, source, sapInstructions)
   }
 
   ipcMain.handle('listening:start', async (event, { interviewId, source }) => {
