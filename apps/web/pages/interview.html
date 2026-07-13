@@ -13,7 +13,7 @@
 <body class="bg-white text-gray-900 antialiased h-screen overflow-hidden">
 
 <div class="h-screen flex overflow-hidden">
-  <aside class="w-56 shrink-0 border-r border-gray-200 flex flex-col bg-white">
+  <aside class="hidden md:flex w-56 shrink-0 border-r border-gray-200 flex-col bg-white">
     <div class="h-16 flex items-center px-5 border-b border-gray-200">
       <a href="/dashboard" class="flex items-center gap-2 font-semibold">
         <i data-lucide="compass" class="text-purple-600 w-5 h-5"></i>ClearPilot
@@ -29,8 +29,8 @@
     </div>
   </aside>
 
-  <div class="flex-1 flex flex-col overflow-hidden">
-    <div class="border-b border-gray-200 px-8 py-4 shrink-0">
+  <div class="flex-1 flex flex-col overflow-hidden min-w-0">
+    <div class="border-b border-gray-200 px-4 md:px-8 py-4 shrink-0">
       <a href="/dashboard" class="text-xs text-gray-400 hover:text-gray-600 inline-flex items-center gap-1 mb-2">
         <i data-lucide="arrow-left" class="w-3 h-3"></i>All interviews
       </a>
@@ -45,16 +45,19 @@
       <div id="interview-subjects" class="flex items-center gap-1.5 flex-wrap mt-2"></div>
     </div>
 
-    <div class="border-b border-gray-200 px-8 flex gap-6 shrink-0">
-      <button data-tab="materials" class="tab-btn text-sm font-medium py-3 border-b-2 -mb-px">Materials</button>
-      <button data-tab="qa" class="tab-btn text-sm font-medium py-3 border-b-2 -mb-px">Q&amp;A</button>
-      <button data-tab="copilot" class="tab-btn text-sm font-medium py-3 border-b-2 -mb-px">Copilot</button>
-      <button data-tab="prompter" class="tab-btn text-sm font-medium py-3 border-b-2 -mb-px">Prompter</button>
+    <!-- overflow-x-auto is the safety net if 4 tabs still don't fit a narrow viewport -
+         without it, tabs past the visible edge (e.g. Prompter) are unreachable, not just
+         visually clipped, since there's nothing to scroll. -->
+    <div class="border-b border-gray-200 px-4 md:px-8 flex gap-4 md:gap-6 shrink-0 overflow-x-auto">
+      <button data-tab="materials" class="tab-btn text-sm font-medium py-3 border-b-2 -mb-px shrink-0 whitespace-nowrap">Materials</button>
+      <button data-tab="qa" class="tab-btn text-sm font-medium py-3 border-b-2 -mb-px shrink-0 whitespace-nowrap">Q&amp;A</button>
+      <button data-tab="copilot" class="tab-btn text-sm font-medium py-3 border-b-2 -mb-px shrink-0 whitespace-nowrap">Copilot</button>
+      <button data-tab="prompter" class="tab-btn text-sm font-medium py-3 border-b-2 -mb-px shrink-0 whitespace-nowrap">Prompter</button>
     </div>
 
     <div class="flex-1 overflow-hidden">
       <!-- Materials -->
-      <div id="panel-materials" class="h-full overflow-y-auto px-8 py-6">
+      <div id="panel-materials" class="h-full overflow-y-auto px-4 md:px-8 py-6">
         <div id="material-form" class="border border-gray-200 rounded-2xl p-5 mb-6 hidden">
           <div id="material-error" class="alert-error mb-3 hidden"></div>
           <p id="material-form-title" class="text-sm font-medium mb-3"></p>
@@ -72,7 +75,7 @@
       </div>
 
       <!-- Q&A -->
-      <div id="panel-qa" class="h-full overflow-y-auto px-8 py-6 hidden">
+      <div id="panel-qa" class="h-full overflow-y-auto px-4 md:px-8 py-6 hidden">
         <div class="flex items-center justify-between mb-1">
           <p class="text-sm text-gray-500">Category and tags are generated automatically by AI — just save the question and answer.</p>
           <div class="flex gap-2 shrink-0 ml-4">
@@ -100,7 +103,7 @@
 
       <!-- Copilot -->
       <div id="panel-copilot" class="h-full overflow-hidden flex flex-col hidden">
-        <div id="conversation" class="flex-1 overflow-y-auto px-8 py-6 space-y-5">
+        <div id="conversation" class="flex-1 overflow-y-auto px-4 md:px-8 py-6 space-y-5">
           <div id="empty-state" class="text-center py-16">
             <div class="w-12 h-12 rounded-2xl bg-purple-50 flex items-center justify-center mx-auto mb-4">
               <i data-lucide="message-circle" class="w-6 h-6 text-purple-600"></i>
@@ -109,7 +112,7 @@
             <p class="text-sm text-gray-500">Your materials, Q&amp;A, and selected subjects ground every answer — type or use the mic.</p>
           </div>
         </div>
-        <div class="border-t border-gray-200 px-8 py-4 shrink-0">
+        <div class="border-t border-gray-200 px-4 md:px-8 py-4 shrink-0">
           <div id="form-error" class="alert-error mb-3 hidden"></div>
           <form id="ask-form" class="flex items-end gap-2">
             <textarea id="question-input" rows="1" class="field-input flex-1 resize-none" placeholder="Ask an interview question..." style="max-height: 120px;"></textarea>
@@ -126,11 +129,11 @@
 
       <!-- Prompter -->
       <div id="panel-prompter" class="h-full overflow-hidden flex flex-col hidden">
-        <div class="border-b border-gray-100 px-8 pt-3 flex items-center gap-1 shrink-0">
+        <div class="border-b border-gray-100 px-4 md:px-8 pt-3 flex items-center gap-1 shrink-0">
           <button type="button" data-prompter-view="live" class="prompter-view-btn text-xs font-medium px-3 py-1.5 rounded-lg">Live</button>
           <button type="button" data-prompter-view="history" class="prompter-view-btn text-xs font-medium px-3 py-1.5 rounded-lg">History</button>
         </div>
-        <div id="prompter-transcript" class="flex-1 overflow-y-auto px-8 py-6 space-y-3">
+        <div id="prompter-transcript" class="flex-1 overflow-y-auto px-4 md:px-8 py-6 space-y-3">
           <div class="text-center py-16">
             <div class="w-12 h-12 rounded-2xl bg-purple-50 flex items-center justify-center mx-auto mb-4">
               <i data-lucide="radio" class="w-6 h-6 text-purple-600"></i>
@@ -142,10 +145,10 @@
             </p>
           </div>
         </div>
-        <div id="prompter-history" class="flex-1 overflow-y-auto px-8 py-6 hidden">
+        <div id="prompter-history" class="flex-1 overflow-y-auto px-4 md:px-8 py-6 hidden">
           <div id="prompter-history-list">Loading…</div>
         </div>
-        <div class="border-t border-gray-200 px-8 py-4 shrink-0">
+        <div class="border-t border-gray-200 px-4 md:px-8 py-4 shrink-0">
           <div class="flex items-center gap-3">
             <button type="button" id="prompter-start-btn" class="btn-primary text-sm">
               <i data-lucide="mic" class="w-4 h-4"></i>
