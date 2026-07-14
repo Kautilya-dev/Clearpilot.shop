@@ -328,6 +328,10 @@
       btn.classList.toggle('text-gray-500', t !== tab);
     });
     if (window.lucide) lucide.createIcons();
+    // loadQA() runs once at page init while this panel is still hidden (Materials
+    // is the default tab), so its overflow measurement reads 0/0 regardless of an
+    // answer's real length - re-measure now that the panel is actually visible.
+    if (tab === 'qa' && typeof refreshQaOverflow === 'function') refreshQaOverflow();
   }
   document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
   switchTab('materials');
@@ -514,16 +518,21 @@
     `;
     }).join('');
     if (window.lucide) lucide.createIcons();
+    refreshQaOverflow();
+  }
 
-    // Only show the "Show full answer" fade/toggle for entries that actually
-    // overflow the collapsed height - short manual entries render fully as-is.
-    // Reading scrollHeight forces a synchronous layout, so this is safe to do
-    // immediately after the innerHTML assignment above - no rAF needed, and
-    // rAF is best avoided here anyway since it can be throttled on a
-    // backgrounded/inactive tab, leaving the toggle wrongly hidden.
-    listEl.querySelectorAll('.qa-answer-wrap').forEach((wrap) => {
+  // Shows the "Show full answer" fade/toggle only for entries that actually
+  // overflow the collapsed height - short manual entries render fully as-is.
+  // scrollHeight/clientHeight both read 0 while #panel-qa is hidden (loadQA()
+  // runs once at page init, before the user has necessarily switched to this
+  // tab - see the Init section at the bottom), so this must be re-run once the
+  // panel is actually visible, not just once right after rendering - see
+  // switchTab() below, which calls this again when the target tab is 'qa'.
+  function refreshQaOverflow() {
+    document.querySelectorAll('#qa-list .qa-answer-wrap').forEach((wrap) => {
       const body = wrap.querySelector('.qa-answer');
       const toggle = wrap.querySelector('.qa-expand-toggle');
+      if (body.classList.contains('qa-noclamp')) return;
       if (body.scrollHeight - body.clientHeight > 4) {
         toggle.hidden = false;
       } else {
