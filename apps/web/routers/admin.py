@@ -41,6 +41,9 @@ class AdminHistoryEntryResponse(BaseModel):
     user_display_name: str
     interview_title: str
     question: str
+    answer: str
+    word_count: int
+    reasoning_effort: str | None  # None = default (unset) effort ran
     started_at: str | None  # question asked
     first_chunk_at: str | None  # first letter of the answer appeared
     ended_at: str  # created_at - set at INSERT time, right after the stream finishes
@@ -73,6 +76,9 @@ async def list_history(
             user_display_name=user.display_name,
             interview_title=interview.title,
             question=entry.question,
+            answer=entry.answer,
+            word_count=len(entry.answer.split()),
+            reasoning_effort=entry.reasoning_effort,
             started_at=entry.started_at.isoformat() if entry.started_at else None,
             first_chunk_at=entry.first_chunk_at.isoformat() if entry.first_chunk_at else None,
             ended_at=entry.created_at.isoformat(),

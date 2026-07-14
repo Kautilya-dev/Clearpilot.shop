@@ -57,7 +57,21 @@
     <p class="text-xs text-gray-500 mb-4">
       Only covers typed Copilot questions (web + desktop) - both go through the same backend
       endpoint that records timing. Voice-driven answers and Job Mode aren't logged here.
+      "Effort" shows the reasoning_effort used for that run (blank = default/unset) - admins
+      and testers can override it per-question to A/B test speed vs. answer quality; hover
+      "Words" to preview the actual answer text.
     </p>
+    <div class="flex items-center gap-2 mb-4">
+      <label class="text-xs text-gray-500">Filter by effort:</label>
+      <select id="effort-filter" class="field-input text-xs w-auto py-1">
+        <option value="">All</option>
+        <option value="default">Default (unset)</option>
+        <option value="minimal">minimal</option>
+        <option value="low">low</option>
+        <option value="medium">medium</option>
+        <option value="high">high</option>
+      </select>
+    </div>
     <div class="border border-gray-200 rounded-2xl overflow-x-auto">
       <table class="w-full text-sm">
         <thead class="bg-gray-50 text-left text-gray-500">
@@ -65,6 +79,8 @@
             <th class="px-4 py-2.5 font-medium">User</th>
             <th class="px-4 py-2.5 font-medium">Interview</th>
             <th class="px-4 py-2.5 font-medium">Question</th>
+            <th class="px-4 py-2.5 font-medium">Effort</th>
+            <th class="px-4 py-2.5 font-medium">Words</th>
             <th class="px-4 py-2.5 font-medium">Asked at</th>
             <th class="px-4 py-2.5 font-medium">First letter at</th>
             <th class="px-4 py-2.5 font-medium">Ended at</th>
@@ -85,6 +101,31 @@
     div.textContent = str;
     return div.innerHTML;
   }
+
+  let allHistoryEntries = [];
+
+  function renderHistoryTable() {
+    const filter = document.getElementById('effort-filter').value;
+    const filtered = !filter
+      ? allHistoryEntries
+      : allHistoryEntries.filter(e => (e.reasoning_effort || 'default') === filter);
+    document.getElementById('history-count').textContent = `${filtered.length} shown`;
+    document.getElementById('history-table-body').innerHTML = filtered.map(e => `
+      <tr>
+        <td class="px-4 py-2.5">${escapeHtml(e.user_display_name)}</td>
+        <td class="px-4 py-2.5 text-gray-500 truncate max-w-[140px]">${escapeHtml(e.interview_title)}</td>
+        <td class="px-4 py-2.5 text-gray-500 truncate max-w-[220px]" title="${escapeHtml(e.question)}">${escapeHtml(e.question)}</td>
+        <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${e.reasoning_effort ? `<span class="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">${escapeHtml(e.reasoning_effort)}</span>` : '<span class="text-xs text-gray-400">default</span>'}</td>
+        <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap" title="${escapeHtml(e.answer.slice(0, 800))}">${e.word_count}</td>
+        <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${e.started_at ? new Date(e.started_at).toLocaleString() : '—'}</td>
+        <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${e.first_chunk_at ? new Date(e.first_chunk_at).toLocaleString() : '—'}</td>
+        <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${new Date(e.ended_at).toLocaleString()}</td>
+        <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${e.time_to_first_chunk_ms != null ? `${e.time_to_first_chunk_ms}ms` : '—'}</td>
+        <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${e.duration_ms != null ? `${(e.duration_ms / 1000).toFixed(2)}s` : '—'}</td>
+      </tr>
+    `).join('');
+  }
+  document.getElementById('effort-filter').addEventListener('change', renderHistoryTable);
 
   (async () => {
     const token = getToken();
@@ -119,20 +160,8 @@
 
       const historyRes = await fetch('/api/admin/history', { headers: { Authorization: `Bearer ${token}` } });
       if (historyRes.ok) {
-        const entries = await historyRes.json();
-        document.getElementById('history-count').textContent = `${entries.length} shown`;
-        document.getElementById('history-table-body').innerHTML = entries.map(e => `
-          <tr>
-            <td class="px-4 py-2.5">${escapeHtml(e.user_display_name)}</td>
-            <td class="px-4 py-2.5 text-gray-500 truncate max-w-[140px]">${escapeHtml(e.interview_title)}</td>
-            <td class="px-4 py-2.5 text-gray-500 truncate max-w-[220px]" title="${escapeHtml(e.question)}">${escapeHtml(e.question)}</td>
-            <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${e.started_at ? new Date(e.started_at).toLocaleString() : '—'}</td>
-            <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${e.first_chunk_at ? new Date(e.first_chunk_at).toLocaleString() : '—'}</td>
-            <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${new Date(e.ended_at).toLocaleString()}</td>
-            <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${e.time_to_first_chunk_ms != null ? `${e.time_to_first_chunk_ms}ms` : '—'}</td>
-            <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${e.duration_ms != null ? `${(e.duration_ms / 1000).toFixed(2)}s` : '—'}</td>
-          </tr>
-        `).join('');
+        allHistoryEntries = await historyRes.json();
+        renderHistoryTable();
       }
 
       loading.classList.add('hidden');

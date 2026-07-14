@@ -129,6 +129,7 @@ async def ask(
                 user_id=user_id, interview_id=interview_id, question=question, answer=full_text,
                 sources=json.dumps(sources_payload),
                 started_at=started_dt, first_chunk_at=first_chunk_dt,
+                reasoning_effort=reasoning_effort,
             ))
             await stream_db.commit()
 

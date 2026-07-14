@@ -11,6 +11,7 @@ export default function AdminScreen() {
   const [status, setStatus] = useState('loading') // loading | denied | error | ready
   const [users, setUsers] = useState([])
   const [entries, setEntries] = useState([])
+  const [effortFilter, setEffortFilter] = useState('')
 
   useEffect(() => {
     ;(async () => {
@@ -27,6 +28,10 @@ export default function AdminScreen() {
       setStatus('ready')
     })()
   }, [])
+
+  const filteredEntries = !effortFilter
+    ? entries
+    : entries.filter((e) => (e.reasoning_effort || 'default') === effortFilter)
 
   return (
     <main className="flex-1 overflow-y-auto">
@@ -71,13 +76,30 @@ export default function AdminScreen() {
 
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-medium">AI Response Times</h2>
-              <span className="text-sm text-gray-500">{entries.length} shown</span>
+              <span className="text-sm text-gray-500">{filteredEntries.length} shown</span>
             </div>
             <p className="text-xs text-gray-500 mb-4">
               Only covers typed Copilot questions (web + desktop) - both go through the same
               backend endpoint that records timing. Voice-driven answers and Job Mode aren&apos;t
-              logged here.
+              logged here. "Effort" shows the reasoning_effort used for that run (default = unset)
+              - admins/testers can override it per-question to A/B test speed vs. answer quality;
+              hover "Words" to preview the actual answer text.
             </p>
+            <div className="flex items-center gap-2 mb-4">
+              <label className="text-xs text-gray-500">Filter by effort:</label>
+              <select
+                value={effortFilter}
+                onChange={(e) => setEffortFilter(e.target.value)}
+                className="field-input text-xs w-auto py-1"
+              >
+                <option value="">All</option>
+                <option value="default">Default (unset)</option>
+                <option value="minimal">minimal</option>
+                <option value="low">low</option>
+                <option value="medium">medium</option>
+                <option value="high">high</option>
+              </select>
+            </div>
             <div className="border border-gray-200 rounded-2xl overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 text-left text-gray-500">
@@ -85,6 +107,8 @@ export default function AdminScreen() {
                     <th className="px-4 py-2.5 font-medium">User</th>
                     <th className="px-4 py-2.5 font-medium">Interview</th>
                     <th className="px-4 py-2.5 font-medium">Question</th>
+                    <th className="px-4 py-2.5 font-medium">Effort</th>
+                    <th className="px-4 py-2.5 font-medium">Words</th>
                     <th className="px-4 py-2.5 font-medium">Asked at</th>
                     <th className="px-4 py-2.5 font-medium">First letter at</th>
                     <th className="px-4 py-2.5 font-medium">Ended at</th>
@@ -93,12 +117,24 @@ export default function AdminScreen() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {entries.map((e) => (
+                  {filteredEntries.map((e) => (
                     <tr key={e.id}>
                       <td className="px-4 py-2.5">{e.user_display_name}</td>
                       <td className="px-4 py-2.5 text-gray-500 truncate max-w-[140px]">{e.interview_title}</td>
                       <td className="px-4 py-2.5 text-gray-500 truncate max-w-[220px]" title={e.question}>
                         {e.question}
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">
+                        {e.reasoning_effort ? (
+                          <span className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">
+                            {e.reasoning_effort}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">default</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap" title={e.answer.slice(0, 800)}>
+                        {e.word_count}
                       </td>
                       <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">{formatDateTime(e.started_at)}</td>
                       <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">{formatDateTime(e.first_chunk_at)}</td>

@@ -99,6 +99,9 @@ class HistoryEntry(Base):
     # it's set at INSERT time, which happens right after the stream finishes.
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     first_chunk_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Null means the default (unset) reasoning effort ran - only ever non-null for an
+    # admin/tester's A/B test request (see routers/chat.py's reasoning_effort gating).
+    reasoning_effort: Mapped[str] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
