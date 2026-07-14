@@ -26,6 +26,13 @@ _CLASSIFY_CONCURRENCY = 5
 _PREPARE_CONCURRENCY = 5
 _DEFAULT_PREPARE_COUNT = 15
 _MAX_PREPARE_COUNT = 30
+# Palette scenarios are pre-generated for later recall, not streamed live under time
+# pressure, so they're worth the fuller comprehensive treatment regardless of the
+# user's live-chat format preference - it's also the only combination that reliably
+# emits the labeled Example/Practical nuance/Design approach/Short answer sections the
+# answer-nav UI needs to build a jump nav (see rag_service.py's STAR_DETAILED_LENGTH_INSTRUCTIONS).
+_PALETTE_ANSWER_FORMAT = "star"
+_PALETTE_ANSWER_LENGTH = "one_minute"
 
 
 class CreateQAEntryRequest(BaseModel):
@@ -208,9 +215,12 @@ async def prepare_qa(
             async with SessionLocal() as task_db:
                 subject_ids = await get_interview_subject_ids(task_db, interview.id)
                 doc_chunks = await retrieve_relevant_docs(task_db, question, subject_ids)
-            system_prompt = build_system_prompt(
-                resume, jd, scenario, doc_chunks, current_user.answer_format_mode, current_user.answer_length
+            format_mode, answer_length = (
+                (_PALETTE_ANSWER_FORMAT, _PALETTE_ANSWER_LENGTH)
+                if palette_mode
+                else (current_user.answer_format_mode, current_user.answer_length)
             )
+            system_prompt = build_system_prompt(resume, jd, scenario, doc_chunks, format_mode, answer_length)
             try:
                 answer = await generate_answer(system_prompt, question)
             except httpx.HTTPError:

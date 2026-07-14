@@ -118,17 +118,25 @@ ANSWER_LENGTH_INSTRUCTIONS = {
 STAR_DETAILED_LENGTH_INSTRUCTIONS = {
     "one_minute": (
         "Write a genuinely comprehensive answer, at least 500 words, up to about 650 - this is an "
-        "intentional exception to rule 4's \"pick 2-3 points\" guidance above. Structure it the way a "
-        "thorough technical mentor would: the core answer with a concrete example, the practical "
-        "nuance of when this applies versus when it doesn't (if relevant to the question), a "
-        "real-world design pattern or approach you follow, and close with a short, tightly-distilled "
-        "interview-ready version of the same answer (2-4 sentences) so the candidate has both the "
-        "deep understanding and the quick spoken version ready."
+        "intentional exception to rule 4's \"pick 2-3 points\" guidance above. Structure it as clearly "
+        "labeled sections so it can be scanned and jumped to at a glance: first the core answer/explanation "
+        "(STAR-labeled if the format above calls for STAR, otherwise plain prose), then a section starting "
+        "with the exact bolded label \"**Example:**\" on its own - one fully concrete walkthrough (reuse "
+        "real details from the candidate's own real-time material below if relevant to the question, "
+        "not a generic invented one), then \"**Practical nuance:**\" - when this applies versus when it "
+        "doesn't (if relevant to the question), then \"**Design approach:**\" - a real-world design "
+        "pattern or approach you follow, and close with \"**Short answer:**\" - a tightly-distilled "
+        "interview-ready version of the same answer (2-4 sentences), reachable without rereading "
+        "everything above it, so the candidate has both the deep understanding and the quick spoken "
+        "version ready. Each of these four labels must appear exactly as shown, bolded, alone at the "
+        "start of its own line/paragraph - not folded into a sentence - so they can be detected and "
+        "turned into jump-to navigation."
     ),
     "long": (
         "Write a thorough answer, at least 300 words, up to about 450 - covering the core answer with "
-        "a concrete example plus one layer of practical nuance (when it applies, a real design "
-        "consideration), without needing every angle the most comprehensive answer would cover."
+        "a concrete example labeled \"**Example:**\" (its own bolded line) plus one layer of practical "
+        "nuance labeled \"**Practical nuance:**\" (when it applies, a real design consideration), "
+        "without needing every angle the most comprehensive answer would cover."
     ),
 }
 

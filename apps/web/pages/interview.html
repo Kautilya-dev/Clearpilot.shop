@@ -191,6 +191,132 @@
     return DOMPurify.sanitize(marked.parse(text || '', { breaks: true }));
   }
 
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+  }
+
+  // Curated SAP CPI palette/technical terms. Matched ONLY against text the model
+  // already chose to bold (see applyKeyTermHighlight below) - never scanned across
+  // raw prose - so ordinary-English collisions ("gather the requirements") can't
+  // false-positive: the system prompt's own rules only have the model bold these
+  // words when discussing the named CPI concept, never as a plain verb.
+  const CPI_TERMS = new Set([
+    'content modifier', 'content enricher', 'poll enrich', 'splitter', 'general splitter',
+    'iterating splitter', 'aggregator', 'router', 'filter', 'multicast', 'join', 'gather',
+    'message mapping', 'graphical mapping', 'value mapping', 'xslt mapping', 'groovy script',
+    'groovy', 'jms', 'data store', 'data store operations', 'exception subprocess',
+    'local integration process', 'process direct', 'processdirect', 'idoc', 'odata', 'soap',
+    'sftp', 'http', 'rest', 'jdbc', 'amqp', 'json to xml', 'xml to json', 'base64', 'pgp',
+    'pkcs7', 'oauth2', 'cloud connector', 'security material', 'keystore', 'certificate',
+    'number range',
+  ]);
+
+  // Marks the leading <strong>/<b> of a paragraph/list-item (or a standalone heading)
+  // as a section label - a STAR label ("Situation:"), or a standalone bold header
+  // ("Example", "Practical nuance", "Short answer") - vs. an ordinary bolded CPI term
+  // mid-sentence. Heuristic: the strong is the very first content of its block AND
+  // either ends with ':' or IS the block's entire text. This is deliberately
+  // format-agnostic: a bullets/concise answer, or a plain medium-length answer with
+  // no multi-part structure, simply never matches and renders through untouched -
+  // it does not assume STAR labels specifically exist. Returns the ordered list of
+  // detected {id, text} labels so the caller can build a jump nav from them.
+  function enhanceAnswerLabels(root) {
+    const labels = [];
+    let i = 0;
+    root.querySelectorAll('p, li, h1, h2, h3').forEach((block) => {
+      if (/^H[1-3]$/.test(block.tagName)) {
+        const text = block.textContent.trim();
+        if (text && text.length <= 40) {
+          const id = `ans-sec-${Date.now()}-${i++}`;
+          block.id = id;
+          block.classList.add('answer-label');
+          labels.push({ id, text });
+        }
+        return;
+      }
+      let node = block.firstChild;
+      while (node && node.nodeType === 3 && !node.textContent.trim()) node = node.nextSibling;
+      if (!node || node.nodeType !== 1 || !/^(STRONG|B)$/.test(node.tagName)) return;
+      const strongText = node.textContent.trim();
+      const blockText = block.textContent.trim();
+      const label = strongText.replace(/:$/, '').trim();
+      if ((strongText.endsWith(':') || strongText === blockText) && label && label.length <= 40) {
+        node.classList.add('answer-label');
+        const id = `ans-sec-${Date.now()}-${i++}`;
+        block.id = id;
+        labels.push({ id, text: label });
+      }
+    });
+    return labels;
+  }
+
+  // Chips any bolded term that matches the curated CPI whitelist. Skipped entirely
+  // for terms already marked as a section label above, so labels and terms never
+  // visually compete for the same treatment.
+  function applyKeyTermHighlight(root) {
+    root.querySelectorAll('strong, b').forEach((el) => {
+      if (el.classList.contains('answer-label')) return;
+      const text = el.textContent.trim().toLowerCase().replace(/[.,;:]+$/, '');
+      if (CPI_TERMS.has(text)) el.classList.add('cpi-term');
+    });
+  }
+
+  // Builds the section-jump pill nav from whatever labels were actually detected.
+  // Fewer than 2 labels means there's nothing meaningful to navigate between (a
+  // bullets/concise answer, or a plain medium-length answer with no multi-part
+  // structure) - in that case this returns '' and no nav renders at all.
+  function buildAnswerNav(labels) {
+    if (labels.length < 2) return '';
+    const pills = labels.map((l, i) =>
+      `<button type="button" class="answer-nav-pill${i === 0 ? ' active' : ''}" data-target="${l.id}">${escapeHtml(l.text)}</button>`
+    ).join('');
+    return `<div class="answer-nav">${pills}</div>`;
+  }
+
+  // Single entry point used everywhere an AI answer is rendered. Returns the nav
+  // bar HTML (possibly empty) separately from the body HTML, since callers need to
+  // place the nav outside any collapsible/clamped wrapper around the body.
+  function renderAnswerHtml(text) {
+    const container = document.createElement('div');
+    container.innerHTML = renderMarkdown(text);
+    const labels = enhanceAnswerLabels(container);
+    applyKeyTermHighlight(container);
+    return { navHtml: buildAnswerNav(labels), bodyHtml: container.innerHTML };
+  }
+
+  // Click-to-jump for section-nav pills - delegated once on document so it works for
+  // every answer-nav instance (Copilot bubble, Q&A list, Prompter history) without
+  // rebinding per render. Expands a collapsed Q&A-list answer first if the target
+  // section is currently hidden behind the clamp.
+  document.addEventListener('click', (evt) => {
+    const pill = evt.target.closest('.answer-nav-pill');
+    if (!pill) return;
+    const nav = pill.closest('.answer-nav');
+    nav.querySelectorAll('.answer-nav-pill').forEach((p) => p.classList.toggle('active', p === pill));
+    const target = document.getElementById(pill.dataset.target);
+    if (!target) return;
+    const collapsedAncestor = target.closest('.qa-answer');
+    if (collapsedAncestor && !collapsedAncestor.classList.contains('expanded')) {
+      collapsedAncestor.classList.add('expanded');
+      const toggle = collapsedAncestor.parentElement.querySelector('.qa-expand-toggle');
+      if (toggle) toggle.textContent = 'Show less';
+    }
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  // Click-to-expand/collapse for the Q&A-bank list's long-answer clamp - delegated
+  // once so it survives list re-renders (filtering, regenerating scenarios, etc.).
+  document.addEventListener('click', (evt) => {
+    const btn = evt.target.closest('.qa-expand-toggle');
+    if (!btn) return;
+    const wrap = btn.closest('.qa-answer-wrap');
+    const body = wrap.querySelector('.qa-answer');
+    const expanded = body.classList.toggle('expanded');
+    btn.textContent = expanded ? 'Show less' : 'Show full answer';
+  });
+
   // ---------- Tabs ----------
   function switchTab(tab) {
     ['materials', 'qa', 'copilot', 'prompter'].forEach(t => {
@@ -361,10 +487,12 @@
       listEl.innerHTML = '<p class="text-sm text-gray-500">No Q&amp;A yet — add one or upload a file of Q/A pairs.</p>';
       return;
     }
-    listEl.innerHTML = entries.map(e => `
+    listEl.innerHTML = entries.map(e => {
+      const { navHtml, bodyHtml } = renderAnswerHtml(e.answer);
+      return `
       <div class="border border-gray-200 rounded-xl p-4">
         <div class="flex items-start justify-between gap-3 mb-1.5">
-          <p class="text-sm font-medium">${e.question}</p>
+          <p class="text-sm font-medium">${escapeHtml(e.question)}</p>
           <div class="flex items-center gap-2 shrink-0">
             ${e.use_count > 0 ? `<span class="text-xs text-gray-400">used ${e.use_count}x</span>` : ''}
             <button onclick="deleteQA('${e.id}')" class="text-gray-400 hover:text-red-600">
@@ -372,15 +500,34 @@
             </button>
           </div>
         </div>
-        <p class="text-sm text-gray-600 mb-2">${e.answer}</p>
+        ${navHtml}
+        <div class="qa-answer-wrap">
+          <div class="answer-text qa-answer text-sm text-gray-600 mb-2">${bodyHtml}</div>
+          <button type="button" class="qa-expand-toggle" hidden>Show full answer</button>
+        </div>
         <div class="flex items-center gap-1.5 flex-wrap">
           ${e.auto_generated ? `<span class="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full inline-flex items-center gap-1"><i data-lucide="sparkles" class="w-3 h-3"></i>Prepared</span>` : ''}
           ${e.category ? `<span class="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">${e.category}</span>` : ''}
           ${e.tags.split(',').filter(t => t.trim()).map(t => `<span class="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">${t.trim()}</span>`).join('')}
         </div>
       </div>
-    `).join('');
+    `;
+    }).join('');
     if (window.lucide) lucide.createIcons();
+
+    // Only show the "Show full answer" fade/toggle for entries that actually
+    // overflow the collapsed height - short manual entries render fully as-is.
+    requestAnimationFrame(() => {
+      listEl.querySelectorAll('.qa-answer-wrap').forEach((wrap) => {
+        const body = wrap.querySelector('.qa-answer');
+        const toggle = wrap.querySelector('.qa-expand-toggle');
+        if (body.scrollHeight - body.clientHeight > 4) {
+          toggle.hidden = false;
+        } else {
+          body.classList.add('qa-noclamp');
+        }
+      });
+    });
   }
 
   document.getElementById('qa-prepare-btn').addEventListener('click', async () => {
@@ -564,7 +711,8 @@
       const exchange = createExchangeContainer();
       conversationEl.appendChild(exchange);
       appendMessage(exchange, 'question', e.question);
-      appendMessage(exchange, 'answer', renderMarkdown(e.answer));
+      const rendered = renderAnswerHtml(e.answer);
+      appendMessage(exchange, 'answer', rendered.navHtml + rendered.bodyHtml);
       appendSources(exchange, e.sources);
     });
     scrollConversationToTop();
@@ -654,7 +802,14 @@
             errorBox.textContent = event.detail || 'Something went wrong.';
             errorBox.classList.remove('hidden');
           } else if (event.type === 'done') {
-            if (answerEl) answerEl.innerHTML = renderMarkdown(rawAnswerText);
+            // Plain renderMarkdown() during streaming (scheduleRender above) is cheap
+            // enough to run every animation frame; the fuller label/term/nav pass only
+            // runs once here, on the finished answer, since re-walking the DOM on every
+            // still-changing chunk would be wasted work.
+            if (answerEl) {
+              const rendered = renderAnswerHtml(rawAnswerText);
+              answerEl.innerHTML = rendered.navHtml + rendered.bodyHtml;
+            }
             if (event.from_qa_bank && badgeEl) {
               badgeEl.textContent = 'From your Q&A';
               badgeEl.classList.remove('hidden');
@@ -771,14 +926,16 @@
       return;
     }
     listEl.innerHTML = practiceEntries
-      .map(
-        (e) => `
+      .map((e) => {
+        const { navHtml, bodyHtml } = renderAnswerHtml(e.answer);
+        return `
       <div class="border border-gray-200 rounded-xl p-4 mb-3">
         <p class="text-xs text-gray-400 mb-2">${new Date(e.created_at).toLocaleString()}</p>
-        <div class="answer-text text-sm">${renderMarkdown(e.answer)}</div>
+        ${navHtml}
+        <div class="answer-text text-sm">${bodyHtml}</div>
       </div>
-    `
-      )
+    `;
+      })
       .join('');
   }
 
