@@ -82,6 +82,9 @@
             <button id="qa-prepare-btn" class="btn-secondary text-sm" title="Generate likely questions and answers from your Materials, so they answer near-instantly during a live session">
               <i data-lucide="sparkles" class="w-4 h-4"></i>Prepare from Materials
             </button>
+            <button id="qa-prepare-palette-btn" class="btn-secondary text-sm" title="Generate one complex scenario question per CPI palette option (Content Modifier, Splitter, Router, ...), grounded in your real-time material, cached for instant recall">
+              <i data-lucide="layout-grid" class="w-4 h-4"></i>Generate Palette Scenarios
+            </button>
             <button id="qa-upload-btn" class="btn-secondary text-sm"><i data-lucide="upload" class="w-4 h-4"></i>Upload file</button>
             <button id="qa-add-btn" class="btn-primary text-sm"><i data-lucide="plus" class="w-4 h-4"></i>Add Q&amp;A</button>
           </div>
@@ -397,6 +400,31 @@
         return;
       }
       status.textContent = `Prepared ${data.prepared_count} question(s) - they'll answer near-instantly if asked during a live session.`;
+      loadQA();
+    } catch (e) {
+      status.textContent = 'Could not reach the server. Try again.';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById('qa-prepare-palette-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('qa-prepare-palette-btn');
+    const status = document.getElementById('qa-prepare-status');
+    btn.disabled = true;
+    status.classList.remove('hidden');
+    status.textContent = 'Generating a complex scenario question per CPI palette option from your real-time material - this can take a minute...';
+    try {
+      const res = await fetch(`/api/interviews/${interviewId}/qa/prepare`, {
+        method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ mode: 'palette_scenarios' }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        status.textContent = data.detail || 'Could not generate palette scenarios.';
+        return;
+      }
+      status.textContent = `Generated ${data.prepared_count} palette scenario(s) - cached for instant recall if asked during a live session.`;
       loadQA();
     } catch (e) {
       status.textContent = 'Could not reach the server. Try again.';

@@ -16,7 +16,7 @@ from services.file_extract_service import extract_text
 from services.qa_cache_service import get_cached_list, invalidate_list, set_cached_list
 from services.qa_classify_service import Classification, classify_qa
 from services.qa_parse_service import parse_qa_pairs
-from services.qa_prepare_service import generate_likely_questions
+from services.qa_prepare_service import generate_likely_questions, generate_palette_scenario_questions
 from services.rag_service import build_system_prompt, generate_answer, get_active_material, retrieve_relevant_docs
 
 router = APIRouter(tags=["qa"])
@@ -143,6 +143,10 @@ async def upload_qa(
 
 class PrepareQARequest(BaseModel):
     count: int = _DEFAULT_PREPARE_COUNT
+    # "general": likely questions across the whole resume/JD/scenario. "palette_scenarios":
+    # one complex, scenario-grounded question per CPI palette option (Content Modifier,
+    # Splitter, Router, ...) - see qa_prepare_service.generate_palette_scenario_questions.
+    mode: str = "general"
 
 
 class PrepareQAResponse(BaseModel):
@@ -157,32 +161,47 @@ async def prepare_qa(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Pre-generates likely interview questions from this interview's Materials (resume's
-    roles & responsibilities, sample work project, target job description) and a full,
-    grounded answer for each - saved into the Q&A bank as auto_generated=True so a live
-    question that matches gets served near-instantly (see routers/chat.py's fast path)
-    instead of waiting on a fresh generation.
+    """Pre-generates interview questions and a full, grounded answer for each - saved into
+    the Q&A bank as auto_generated=True so a live question that matches gets served
+    near-instantly (see routers/chat.py's fast path) instead of waiting on a fresh
+    generation. Two modes: "general" covers the whole resume/JD/scenario broadly;
+    "palette_scenarios" generates one complex, scenario-based question per CPI palette
+    option, grounded in the real-time material, for fast recall on design-under-a-twist
+    questions specifically.
     """
-    count = max(1, min(body.count, _MAX_PREPARE_COUNT))
-
     resume = await get_active_material(db, interview.id, "resume")
     jd = await get_active_material(db, interview.id, "job_description")
     scenario = await get_active_material(db, interview.id, "real_time_scenario")
-    if not resume and not scenario:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Add a resume or sample work project first - nothing to prepare questions from.",
-        )
 
-    questions = await generate_likely_questions(
-        resume.text if resume else "", jd.text if jd else "", scenario.text if scenario else "", count=count
-    )
-    if not questions:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Could not generate questions - try again.")
+    palette_mode = body.mode == "palette_scenarios"
+    if palette_mode:
+        if not scenario:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Add a sample work project (real-time material) first - palette scenarios are grounded in it.",
+            )
+        pairs = await generate_palette_scenario_questions(
+            resume.text if resume else "", jd.text if jd else "", scenario.text
+        )
+        if not pairs:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Could not generate scenarios - try again.")
+    else:
+        if not resume and not scenario:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Add a resume or sample work project first - nothing to prepare questions from.",
+            )
+        count = max(1, min(body.count, _MAX_PREPARE_COUNT))
+        questions = await generate_likely_questions(
+            resume.text if resume else "", jd.text if jd else "", scenario.text if scenario else "", count=count
+        )
+        if not questions:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Could not generate questions - try again.")
+        pairs = [("", q) for q in questions]
 
     semaphore = asyncio.Semaphore(_PREPARE_CONCURRENCY)
 
-    async def _prepare_one(question: str) -> QAEntry | None:
+    async def _prepare_one(palette: str, question: str) -> QAEntry | None:
         async with semaphore:
             # Own session per concurrent task - a single AsyncSession can't handle concurrent
             # operations (see routers/admin.py's evaluate_history for the same fix).
@@ -197,12 +216,13 @@ async def prepare_qa(
             except httpx.HTTPError:
                 return None
             classification = await _classify_or_fallback(question, answer)
+            tags = f"{classification.tags},{palette}" if palette and classification.tags else (palette or classification.tags)
             return QAEntry(
                 user_id=current_user.id, interview_id=interview.id, question=question, answer=answer,
-                category=classification.category, tags=classification.tags, auto_generated=True,
+                category=classification.category, tags=tags, auto_generated=True,
             )
 
-    results = await asyncio.gather(*(_prepare_one(q) for q in questions))
+    results = await asyncio.gather(*(_prepare_one(palette, q) for palette, q in pairs))
     entries = [e for e in results if e is not None]
     if not entries:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Could not generate any answers - try again.")

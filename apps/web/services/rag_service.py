@@ -21,6 +21,7 @@ CRITICAL RULES:
 4. Keep every answer interview-perfect: complete and confident, but paced the way a real spoken interview answer sounds - see the word-count target below (roughly one minute by default). Treat that target as a FLOOR, not just a ceiling - a two-sentence summary is a failure even under "medium," because it doesn't sound like a complete interview answer. Reach the target by actually explaining the reasoning and walking through one concrete example in real detail, not by padding with filler. Pick the 2-3 points that matter most rather than trying to cover everything; a focused one-minute answer beats a long one that loses the interviewer's attention. Exception: if the word-count target below explicitly calls for a comprehensive, multi-angle answer, follow that instead - it overrides "pick 2-3 points" for that specific format+length combination.
 5. Use markdown to make the answer easy to scan: **bold** for key terms, numbered or bulleted lists for multi-step processes. Keep the language natural and first-person, not a dry reference doc.
 6. Every **bolded** key term must be immediately followed by a short, concrete example, mini-scenario, or plain-language explanation of what it means and how it was used - e.g. "I used **Content Modifier** to enrich the message (for example, stamping a `correlationId` header onto every payload for end-to-end tracing)." Never bold a term and move on without unpacking it. In a tight answer this means bolding only the 1-2 terms that matter most, not every possible one, so the example still fits inside the word-count target.
+7. When REAL-TIME SCENARIOS TO DRAW ON is provided below and it's relevant to what's being asked, prefer pulling the concrete example from THAT specific material (its actual systems, field names, flow steps) over inventing a generic one - the candidate needs an example they actually lived through and can defend under follow-up questions, not a plausible-sounding placeholder. Only fall back to a generic example if the scenario material genuinely doesn't cover the term being discussed.
 {resume_section}{jd_section}{scenario_section}
 REFERENCE MATERIAL (official documentation for this interview's subjects):
 {doc_context}"""
@@ -34,11 +35,19 @@ class RetrievedChunk:
         self.rank = rank
 
 
-# Calibrated against the real SAP corpus: clearly-relevant matches scored 0.157-0.994,
-# while questions with only coincidental term overlap (e.g. "Can you walk me through your
-# experience?" sharing "walk"/"experience" with an unrelated chunk) scored <= 2.7e-07 - a
-# 1.5M-to-1 gap. 0.01 sits comfortably in that gap with margin on both sides.
-MIN_DOC_RANK = 0.01
+# websearch_to_tsquery ANDs every extracted term together by default - confirmed live that
+# this silently drops highly-relevant chunks whenever the question uses one framing word or
+# abbreviation ("difference", "CPI") the source documentation doesn't happen to also use, even
+# though the chunk scores well on ts_rank. Rebuilding the query with '|' (OR) between the same
+# terms (still using websearch_to_tsquery for its stemming/stopword handling, just rewriting
+# the resulting '&'s) fixes that, but plain ts_rank no longer safely separates real matches
+# from coincidental ones once single-term overlaps qualify - ts_rank_cd (cover density, which
+# rewards multiple matching terms appearing together) restores that separation with a much
+# wider margin. Calibrated against the real SAP corpus: clearly-relevant matches scored
+# 3.6-6.2, while questions with only coincidental term overlap (e.g. "Can you walk me through
+# your experience?") scored 0.1-0.4 - comfortable margin on both sides of 1.0.
+MIN_DOC_RANK = 1.0
+_OR_TSQUERY = "to_tsquery('english', regexp_replace(websearch_to_tsquery('english', :q)::text, ' & ', ' | ', 'g'))"
 
 
 async def retrieve_relevant_docs(
@@ -54,12 +63,12 @@ async def retrieve_relevant_docs(
     if not await has_enough_substantive_terms(db, question):
         return []
     stmt = text(
-        """
-        SELECT title, breadcrumb, text, ts_rank(search_vector, websearch_to_tsquery('english', :q)) AS rank
+        f"""
+        SELECT title, breadcrumb, text, ts_rank_cd(search_vector, {_OR_TSQUERY}) AS rank
         FROM documents
-        WHERE search_vector @@ websearch_to_tsquery('english', :q)
+        WHERE search_vector @@ {_OR_TSQUERY}
           AND subject_id IN :subject_ids
-          AND ts_rank(search_vector, websearch_to_tsquery('english', :q)) > :min_rank
+          AND ts_rank_cd(search_vector, {_OR_TSQUERY}) > :min_rank
         ORDER BY rank DESC
         LIMIT :limit
         """
