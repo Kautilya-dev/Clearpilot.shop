@@ -94,7 +94,6 @@ export default function AdminScreen() {
               >
                 <option value="">All</option>
                 <option value="default">Default (unset)</option>
-                <option value="minimal">minimal</option>
                 <option value="low">low</option>
                 <option value="medium">medium</option>
                 <option value="high">high</option>

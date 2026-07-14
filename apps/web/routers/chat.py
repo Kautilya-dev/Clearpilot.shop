@@ -20,7 +20,9 @@ from services.rag_service import build_system_prompt, generate_answer_stream, ge
 
 router = APIRouter(tags=["chat"])
 
-_VALID_REASONING_EFFORTS = {"minimal", "low", "medium", "high"}
+# "minimal" is not a valid reasoning_effort for this model on the Chat Completions endpoint -
+# confirmed live, OpenAI rejects it with a 400. Only these three are actually accepted.
+_VALID_REASONING_EFFORTS = {"low", "medium", "high"}
 
 
 class AskRequest(BaseModel):
