@@ -102,6 +102,11 @@ class HistoryEntry(Base):
     # Null means the default (unset) reasoning effort ran - only ever non-null for an
     # admin/tester's A/B test request (see routers/chat.py's reasoning_effort gating).
     reasoning_effort: Mapped[str] = mapped_column(String, nullable=True)
+    # Populated on-demand by POST /admin/history/evaluate (services/answer_quality_service.py)
+    # - null until an admin triggers evaluation, not computed automatically on every answer.
+    grounding_score: Mapped[int] = mapped_column(Integer, nullable=True)
+    logic_score: Mapped[int] = mapped_column(Integer, nullable=True)
+    eval_notes: Mapped[str] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 

@@ -1,14 +1,25 @@
+import asyncio
+from collections import defaultdict
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
-from db.base import get_db
+from db.base import SessionLocal, get_db
 from db.models import HistoryEntry, Interview, User
 from routers.auth import get_current_user
+from routers.interviews import get_interview_subject_ids
+from services.answer_quality_service import evaluate_answer, evaluate_consistency
+from services.rag_service import retrieve_relevant_docs
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+# Must match apps/web/routers/history.py's savePracticeHistoryEntry prefix - practice-round
+# feedback entries aren't topic Q&A, so they're excluded from grounding/logic/consistency
+# evaluation (there's no "reference material" question to ground them against).
+_PRACTICE_QUESTION_PREFIX = "Practice session with partner"
 
 
 async def require_admin(current_user: User = Depends(get_current_user)) -> User:
@@ -49,6 +60,9 @@ class AdminHistoryEntryResponse(BaseModel):
     ended_at: str  # created_at - set at INSERT time, right after the stream finishes
     time_to_first_chunk_ms: int | None
     duration_ms: int | None
+    grounding_score: int | None  # 0-10, null until POST /admin/history/evaluate runs
+    logic_score: int | None
+    eval_notes: str | None
 
 
 @router.get("/history", response_model=list[AdminHistoryEntryResponse])
@@ -84,5 +98,78 @@ async def list_history(
             ended_at=entry.created_at.isoformat(),
             time_to_first_chunk_ms=time_to_first_chunk_ms,
             duration_ms=duration_ms,
+            grounding_score=entry.grounding_score,
+            logic_score=entry.logic_score,
+            eval_notes=entry.eval_notes,
         ))
     return entries
+
+
+class ConsistencyGroup(BaseModel):
+    question: str
+    answer_count: int
+    consistency_score: int | None
+    notes: str | None
+
+
+class EvaluateResponse(BaseModel):
+    evaluated_count: int
+    consistency_groups: list[ConsistencyGroup]
+
+
+@router.post("/history/evaluate", response_model=EvaluateResponse)
+async def evaluate_history(_: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """Scores every not-yet-scored, non-practice-round history entry for grounding + logic,
+    then groups entries by identical question text and scores cross-run consistency for any
+    question with 2+ independently-generated answers (e.g. the same question asked at
+    different reasoning_effort settings)."""
+    unscored = (
+        await db.scalars(
+            select(HistoryEntry).where(
+                HistoryEntry.grounding_score.is_(None),
+                ~HistoryEntry.question.startswith(_PRACTICE_QUESTION_PREFIX),
+            )
+        )
+    ).all()
+
+    async def score_one(entry: HistoryEntry):
+        # A single AsyncSession can't run concurrent operations - each concurrent task gets
+        # its own session for the read-only retrieval, then sets plain attributes on `entry`
+        # (no DB I/O, safe from any coroutine) for the original session to commit afterward.
+        async with SessionLocal() as task_db:
+            subject_ids = await get_interview_subject_ids(task_db, entry.interview_id)
+            doc_chunks = await retrieve_relevant_docs(task_db, entry.question, subject_ids)
+        reference_text = "\n\n".join(c.text for c in doc_chunks)
+        result = await evaluate_answer(entry.question, entry.answer, reference_text)
+        entry.grounding_score = result["grounding_score"]
+        entry.logic_score = result["logic_score"]
+        entry.eval_notes = result["eval_notes"]
+
+    await asyncio.gather(*(score_one(e) for e in unscored))
+    await db.commit()
+
+    # Consistency: group ALL non-practice entries (not just newly-scored ones) by question text.
+    all_entries = (
+        await db.scalars(
+            select(HistoryEntry).where(~HistoryEntry.question.startswith(_PRACTICE_QUESTION_PREFIX))
+        )
+    ).all()
+    by_question = defaultdict(list)
+    for e in all_entries:
+        by_question[e.question].append(e.answer)
+
+    groups_to_check = {q: answers for q, answers in by_question.items() if len(answers) >= 2}
+    consistency_results = await asyncio.gather(
+        *(evaluate_consistency(q, answers) for q, answers in groups_to_check.items())
+    )
+    consistency_groups = [
+        ConsistencyGroup(
+            question=q,
+            answer_count=len(answers),
+            consistency_score=result["consistency_score"],
+            notes=result["notes"],
+        )
+        for (q, answers), result in zip(groups_to_check.items(), consistency_results)
+    ]
+
+    return EvaluateResponse(evaluated_count=len(unscored), consistency_groups=consistency_groups)

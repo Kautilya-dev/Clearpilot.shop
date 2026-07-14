@@ -6,6 +6,7 @@
 <title>ClearPilot — Admin</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/lucide@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <link rel="stylesheet" href="/assets/css/styles.css?v=4" />
 </head>
 <body class="bg-white text-gray-900 antialiased">
@@ -25,7 +26,7 @@
   </div>
 </header>
 
-<main class="max-w-4xl mx-auto px-4 md:px-6 py-16">
+<main class="max-w-5xl mx-auto px-4 md:px-6 py-16">
   <h1 class="text-2xl font-semibold tracking-tight mb-1">Admin</h1>
   <p class="text-sm text-gray-500 mb-8">Internal — not linked from the public nav.</p>
 
@@ -50,45 +51,60 @@
       </table>
     </div>
 
-    <div class="flex items-center justify-between mb-4">
-      <h2 class="font-medium">AI Response Times</h2>
-      <span id="history-count" class="text-sm text-gray-500"></span>
+    <div class="flex items-center justify-between mb-1">
+      <h2 class="font-medium">AI Testing Dashboard</h2>
     </div>
     <p class="text-xs text-gray-500 mb-4">
-      Only covers typed Copilot questions (web + desktop) - both go through the same backend
-      endpoint that records timing. Voice-driven answers and Job Mode aren't logged here.
-      "Effort" shows the reasoning_effort used for that run (blank = default/unset) - admins
-      and testers can override it per-question to A/B test speed vs. answer quality; hover
-      "Words" to preview the actual answer text.
+      Every typed Copilot question (web + desktop, both go through the same backend endpoint)
+      grounded by SAP CPI reference material. Voice-driven answers and Job Mode aren't logged.
+      "Run Evaluation" scores every unscored answer for <strong>grounding</strong> (does it align
+      with the reference material, or fabricate specifics) and <strong>logic</strong> (is it
+      coherent), then checks <strong>consistency</strong> across repeated questions.
     </p>
-    <div class="flex items-center gap-2 mb-4">
-      <label class="text-xs text-gray-500">Filter by effort:</label>
-      <select id="effort-filter" class="field-input text-xs w-auto py-1">
-        <option value="">All</option>
-        <option value="default">Default (unset)</option>
-        <option value="low">low</option>
-        <option value="medium">medium</option>
-        <option value="high">high</option>
-      </select>
+
+    <div class="flex items-center gap-3 mb-6 flex-wrap">
+      <button id="run-eval-btn" class="btn-primary text-sm">
+        <i data-lucide="sparkles" class="w-4 h-4"></i>Run Evaluation
+      </button>
+      <span id="eval-status" class="text-xs text-gray-500"></span>
+      <div class="flex items-center gap-2 ml-auto">
+        <label class="text-xs text-gray-500">Effort:</label>
+        <select id="effort-filter" class="field-input text-xs w-auto py-1">
+          <option value="">All</option>
+          <option value="default">Default (unset)</option>
+          <option value="low">low</option>
+          <option value="medium">medium</option>
+          <option value="high">high</option>
+        </select>
+      </div>
     </div>
-    <div class="border border-gray-200 rounded-2xl overflow-x-auto">
-      <table class="w-full text-sm">
-        <thead class="bg-gray-50 text-left text-gray-500">
-          <tr>
-            <th class="px-4 py-2.5 font-medium">User</th>
-            <th class="px-4 py-2.5 font-medium">Interview</th>
-            <th class="px-4 py-2.5 font-medium">Question</th>
-            <th class="px-4 py-2.5 font-medium">Effort</th>
-            <th class="px-4 py-2.5 font-medium">Words</th>
-            <th class="px-4 py-2.5 font-medium">Asked at</th>
-            <th class="px-4 py-2.5 font-medium">First letter at</th>
-            <th class="px-4 py-2.5 font-medium">Ended at</th>
-            <th class="px-4 py-2.5 font-medium">First chunk</th>
-            <th class="px-4 py-2.5 font-medium">Duration</th>
-          </tr>
-        </thead>
-        <tbody id="history-table-body" class="divide-y divide-gray-100"></tbody>
-      </table>
+
+    <div id="stat-cards" class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8"></div>
+
+    <div class="grid md:grid-cols-2 gap-6 mb-8">
+      <div class="border border-gray-200 rounded-2xl p-4">
+        <p class="text-xs font-semibold text-gray-600 mb-3">Speed by reasoning effort</p>
+        <canvas id="speed-chart" height="200"></canvas>
+      </div>
+      <div class="border border-gray-200 rounded-2xl p-4">
+        <p class="text-xs font-semibold text-gray-600 mb-3">Quality by reasoning effort (0-10)</p>
+        <canvas id="quality-chart" height="200"></canvas>
+      </div>
+      <div class="border border-gray-200 rounded-2xl p-4 md:col-span-2">
+        <p class="text-xs font-semibold text-gray-600 mb-3">Answer length by reasoning effort (words)</p>
+        <canvas id="length-chart" height="120"></canvas>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-sm font-semibold text-gray-700">Consistency across repeated questions</h3>
+    </div>
+    <p class="text-xs text-gray-500 mb-4">
+      Only questions asked 2+ times independently (e.g. at different reasoning_effort settings)
+      show up here - scores how much the answers agree with each other on the core facts.
+    </p>
+    <div id="consistency-list" class="space-y-3">
+      <p class="text-sm text-gray-400">Run evaluation to see consistency results.</p>
     </div>
   </div>
 </main>
@@ -101,30 +117,151 @@
     return div.innerHTML;
   }
 
-  let allHistoryEntries = [];
+  const EFFORT_ORDER = ['default', 'low', 'medium', 'high'];
+  const EFFORT_COLORS = { default: '#9ca3af', low: '#34d399', medium: '#fbbf24', high: '#f87171' };
 
-  function renderHistoryTable() {
-    const filter = document.getElementById('effort-filter').value;
-    const filtered = !filter
-      ? allHistoryEntries
-      : allHistoryEntries.filter(e => (e.reasoning_effort || 'default') === filter);
-    document.getElementById('history-count').textContent = `${filtered.length} shown`;
-    document.getElementById('history-table-body').innerHTML = filtered.map(e => `
-      <tr>
-        <td class="px-4 py-2.5">${escapeHtml(e.user_display_name)}</td>
-        <td class="px-4 py-2.5 text-gray-500 truncate max-w-[140px]">${escapeHtml(e.interview_title)}</td>
-        <td class="px-4 py-2.5 text-gray-500 truncate max-w-[220px]" title="${escapeHtml(e.question)}">${escapeHtml(e.question)}</td>
-        <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${e.reasoning_effort ? `<span class="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">${escapeHtml(e.reasoning_effort)}</span>` : '<span class="text-xs text-gray-400">default</span>'}</td>
-        <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap" title="${escapeHtml(e.answer.slice(0, 800))}">${e.word_count}</td>
-        <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${e.started_at ? new Date(e.started_at).toLocaleString() : '—'}</td>
-        <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${e.first_chunk_at ? new Date(e.first_chunk_at).toLocaleString() : '—'}</td>
-        <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${new Date(e.ended_at).toLocaleString()}</td>
-        <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${e.time_to_first_chunk_ms != null ? `${e.time_to_first_chunk_ms}ms` : '—'}</td>
-        <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">${e.duration_ms != null ? `${(e.duration_ms / 1000).toFixed(2)}s` : '—'}</td>
-      </tr>
+  let allHistoryEntries = [];
+  let consistencyGroups = [];
+  let charts = {};
+
+  function avg(nums) {
+    const vals = nums.filter((n) => n != null);
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  }
+
+  function groupByEffort(entries) {
+    const groups = {};
+    for (const key of EFFORT_ORDER) groups[key] = [];
+    for (const e of entries) {
+      const key = e.reasoning_effort || 'default';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(e);
+    }
+    return groups;
+  }
+
+  function destroyChart(id) {
+    if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+  }
+
+  function renderStatCards(entries) {
+    const container = document.getElementById('stat-cards');
+    const scored = entries.filter((e) => e.grounding_score != null);
+    const cards = [
+      { label: 'Runs', value: entries.length },
+      { label: 'Avg first chunk', value: avg(entries.map((e) => e.time_to_first_chunk_ms)) != null ? `${Math.round(avg(entries.map((e) => e.time_to_first_chunk_ms)))}ms` : '—' },
+      { label: 'Avg duration', value: avg(entries.map((e) => e.duration_ms)) != null ? `${(avg(entries.map((e) => e.duration_ms)) / 1000).toFixed(1)}s` : '—' },
+      { label: 'Avg grounding', value: scored.length ? avg(scored.map((e) => e.grounding_score)).toFixed(1) + '/10' : 'not scored' },
+      { label: 'Avg logic', value: scored.length ? avg(scored.map((e) => e.logic_score)).toFixed(1) + '/10' : 'not scored' },
+    ];
+    container.innerHTML = cards.map((c) => `
+      <div class="border border-gray-200 rounded-xl p-3">
+        <p class="text-xs text-gray-400 mb-1">${c.label}</p>
+        <p class="text-lg font-semibold">${c.value}</p>
+      </div>
     `).join('');
   }
-  document.getElementById('effort-filter').addEventListener('change', renderHistoryTable);
+
+  function renderCharts(entries) {
+    const grouped = groupByEffort(entries);
+    const labels = EFFORT_ORDER.filter((k) => grouped[k].length > 0);
+    const colors = labels.map((k) => EFFORT_COLORS[k] || '#9ca3af');
+
+    destroyChart('speed');
+    charts.speed = new Chart(document.getElementById('speed-chart'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'First chunk (ms)', backgroundColor: '#7c3aed', data: labels.map((k) => avg(grouped[k].map((e) => e.time_to_first_chunk_ms))) },
+          { label: 'Total duration (ms)', backgroundColor: '#c4b5fd', data: labels.map((k) => avg(grouped[k].map((e) => e.duration_ms))) },
+        ],
+      },
+      options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } }, scales: { y: { beginAtZero: true } } },
+    });
+
+    destroyChart('quality');
+    charts.quality = new Chart(document.getElementById('quality-chart'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Grounding', backgroundColor: '#10b981', data: labels.map((k) => avg(grouped[k].map((e) => e.grounding_score))) },
+          { label: 'Logic', backgroundColor: '#a7f3d0', data: labels.map((k) => avg(grouped[k].map((e) => e.logic_score))) },
+        ],
+      },
+      options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } }, scales: { y: { beginAtZero: true, max: 10 } } },
+    });
+
+    destroyChart('length');
+    charts.length = new Chart(document.getElementById('length-chart'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{ label: 'Avg words', backgroundColor: colors, data: labels.map((k) => avg(grouped[k].map((e) => e.word_count))) }],
+      },
+      options: { indexAxis: 'y', responsive: true, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } },
+    });
+  }
+
+  function renderConsistency() {
+    const container = document.getElementById('consistency-list');
+    if (consistencyGroups.length === 0) {
+      container.innerHTML = '<p class="text-sm text-gray-400">No question has been asked 2+ times yet - nothing to compare.</p>';
+      return;
+    }
+    container.innerHTML = consistencyGroups.map((g) => {
+      const score = g.consistency_score;
+      const badgeClass = score == null ? 'bg-gray-100 text-gray-500' : score >= 7 ? 'bg-green-50 text-green-700' : score >= 4 ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700';
+      return `
+        <div class="border border-gray-200 rounded-xl p-4">
+          <div class="flex items-start justify-between gap-3 mb-1.5">
+            <p class="text-sm font-medium">${escapeHtml(g.question)}</p>
+            <span class="text-xs px-2 py-0.5 rounded-full shrink-0 ${badgeClass}">${score != null ? `${score}/10` : 'unscored'}</span>
+          </div>
+          <p class="text-xs text-gray-500 mb-1">${g.answer_count} independent answers compared</p>
+          ${g.notes ? `<p class="text-xs text-gray-600">${escapeHtml(g.notes)}</p>` : ''}
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderDashboard() {
+    const filter = document.getElementById('effort-filter').value;
+    const filtered = !filter ? allHistoryEntries : allHistoryEntries.filter((e) => (e.reasoning_effort || 'default') === filter);
+    renderStatCards(filtered);
+    renderCharts(filtered);
+  }
+  document.getElementById('effort-filter').addEventListener('change', renderDashboard);
+
+  async function loadHistory(token) {
+    const historyRes = await fetch('/api/admin/history', { headers: { Authorization: `Bearer ${token}` } });
+    if (historyRes.ok) {
+      allHistoryEntries = await historyRes.json();
+      renderDashboard();
+    }
+  }
+
+  document.getElementById('run-eval-btn').addEventListener('click', async () => {
+    const token = getToken();
+    const btn = document.getElementById('run-eval-btn');
+    const status = document.getElementById('eval-status');
+    btn.disabled = true;
+    status.textContent = 'Evaluating - this can take a while for many unscored answers...';
+    try {
+      const res = await fetch('/api/admin/history/evaluate', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error('evaluate failed');
+      const data = await res.json();
+      consistencyGroups = data.consistency_groups;
+      status.textContent = `Scored ${data.evaluated_count} new answer(s).`;
+      renderConsistency();
+      await loadHistory(token);
+    } catch (e) {
+      status.textContent = 'Evaluation failed - try again.';
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   (async () => {
     const token = getToken();
@@ -157,11 +294,7 @@
         </tr>
       `).join('');
 
-      const historyRes = await fetch('/api/admin/history', { headers: { Authorization: `Bearer ${token}` } });
-      if (historyRes.ok) {
-        allHistoryEntries = await historyRes.json();
-        renderHistoryTable();
-      }
+      await loadHistory(token);
 
       loading.classList.add('hidden');
       content.classList.remove('hidden');
