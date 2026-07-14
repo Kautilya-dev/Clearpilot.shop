@@ -532,9 +532,14 @@
     document.querySelectorAll('#qa-list .qa-answer-wrap').forEach((wrap) => {
       const body = wrap.querySelector('.qa-answer');
       const toggle = wrap.querySelector('.qa-expand-toggle');
-      if (body.classList.contains('qa-noclamp')) return;
+      // Always re-evaluate from scratch (no early-return on an existing
+      // qa-noclamp) - the first measurement can happen while the panel is
+      // still hidden behind another tab, wrongly marking every entry as
+      // "fits" (0/0), so a later re-check with the panel actually visible
+      // must be able to correct that, not just confirm it.
       if (body.scrollHeight - body.clientHeight > 4) {
         toggle.hidden = false;
+        body.classList.remove('qa-noclamp');
       } else {
         body.classList.add('qa-noclamp');
       }
