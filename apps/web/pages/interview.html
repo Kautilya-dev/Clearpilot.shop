@@ -525,18 +525,18 @@
   // overflow the collapsed height - short manual entries render fully as-is.
   // scrollHeight/clientHeight both read 0 while #panel-qa is hidden (loadQA()
   // runs once at page init, before the user has necessarily switched to this
-  // tab - see the Init section at the bottom), so this must be re-run once the
-  // panel is actually visible, not just once right after rendering - see
-  // switchTab() below, which calls this again when the target tab is 'qa'.
+  // tab - see the Init section at the bottom) - and a 0/0 reading can't just
+  // be re-checked later, because adding qa-noclamp itself removes the height
+  // clamp (max-height: none), so once wrongly applied every future check also
+  // sees no overflow, since there's no longer a clamp to overflow against.
+  // The only safe fix is to not measure - and not touch any class - at all
+  // while the panel is hidden, and let switchTab() below call this again
+  // once the panel actually becomes visible for the first real measurement.
   function refreshQaOverflow() {
+    if (document.getElementById('panel-qa').classList.contains('hidden')) return;
     document.querySelectorAll('#qa-list .qa-answer-wrap').forEach((wrap) => {
       const body = wrap.querySelector('.qa-answer');
       const toggle = wrap.querySelector('.qa-expand-toggle');
-      // Always re-evaluate from scratch (no early-return on an existing
-      // qa-noclamp) - the first measurement can happen while the panel is
-      // still hidden behind another tab, wrongly marking every entry as
-      // "fits" (0/0), so a later re-check with the panel actually visible
-      // must be able to correct that, not just confirm it.
       if (body.scrollHeight - body.clientHeight > 4) {
         toggle.hidden = false;
         body.classList.remove('qa-noclamp');
