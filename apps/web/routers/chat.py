@@ -89,11 +89,25 @@ async def ask(
         # streamed body finishes sending, not after. Everything from here on needs its
         # own session.
         async with SessionLocal() as stream_db:
-            resume = await get_active_material(stream_db, interview_id, "resume")
-            jd = await get_active_material(stream_db, interview_id, "job_description")
-            scenario = await get_active_material(stream_db, interview_id, "real_time_scenario")
+            # Fast path: this exact question was already generated fresh through the full
+            # grounding pipeline at prepare-time (POST /qa/prepare) - trust it directly instead
+            # of paying for a judge round-trip to re-verify/re-personalize content that's
+            # already accurate and in the right voice. No material loads, no LLM call at all -
+            # this is what gets a matched question responding in well under a second.
+            if qa_candidate and qa_candidate.auto_generated:
+                full_text = qa_candidate.answer
+                used_qa_bank = True
+                first_chunk_monotonic = time.monotonic()
+                first_chunk_dt = datetime.now(timezone.utc)
+                yield _sse({"type": "chunk", "text": full_text})
 
-            if qa_candidate:
+            resume = await get_active_material(stream_db, interview_id, "resume") if not used_qa_bank else None
+            jd = await get_active_material(stream_db, interview_id, "job_description") if not used_qa_bank else None
+            scenario = (
+                await get_active_material(stream_db, interview_id, "real_time_scenario") if not used_qa_bank else None
+            )
+
+            if qa_candidate and not used_qa_bank:
                 try:
                     judged = await judge_and_maybe_answer(question, qa_candidate, resume, jd, scenario)
                 except httpx.HTTPError:

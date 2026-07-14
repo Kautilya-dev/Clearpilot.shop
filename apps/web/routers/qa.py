@@ -8,19 +8,24 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.base import get_db
+from db.base import SessionLocal, get_db
 from db.models import Interview, QAEntry, User
 from routers.auth import get_current_user
-from routers.interviews import get_owned_interview
+from routers.interviews import get_interview_subject_ids, get_owned_interview
 from services.file_extract_service import extract_text
 from services.qa_cache_service import get_cached_list, invalidate_list, set_cached_list
 from services.qa_classify_service import Classification, classify_qa
 from services.qa_parse_service import parse_qa_pairs
+from services.qa_prepare_service import generate_likely_questions
+from services.rag_service import build_system_prompt, generate_answer, get_active_material, retrieve_relevant_docs
 
 router = APIRouter(tags=["qa"])
 
 _MAX_PAIRS_PER_UPLOAD = 50
 _CLASSIFY_CONCURRENCY = 5
+_PREPARE_CONCURRENCY = 5
+_DEFAULT_PREPARE_COUNT = 15
+_MAX_PREPARE_COUNT = 30
 
 
 class CreateQAEntryRequest(BaseModel):
@@ -40,13 +45,14 @@ class QAEntryResponse(BaseModel):
     category: str
     tags: str
     use_count: int
+    auto_generated: bool
     created_at: str
 
 
 def _to_response(e: QAEntry) -> QAEntryResponse:
     return QAEntryResponse(
         id=str(e.id), question=e.question, answer=e.answer, category=e.category,
-        tags=e.tags, use_count=e.use_count, created_at=e.created_at.isoformat(),
+        tags=e.tags, use_count=e.use_count, auto_generated=e.auto_generated, created_at=e.created_at.isoformat(),
     )
 
 
@@ -133,6 +139,80 @@ async def upload_qa(
         await db.refresh(entry)
     await invalidate_list(interview.id)
     return [_to_response(e) for e in entries]
+
+
+class PrepareQARequest(BaseModel):
+    count: int = _DEFAULT_PREPARE_COUNT
+
+
+class PrepareQAResponse(BaseModel):
+    prepared_count: int
+    entries: list[QAEntryResponse]
+
+
+@router.post("/interviews/{interview_id}/qa/prepare", response_model=PrepareQAResponse)
+async def prepare_qa(
+    body: PrepareQARequest,
+    interview: Interview = Depends(get_owned_interview),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Pre-generates likely interview questions from this interview's Materials (resume's
+    roles & responsibilities, sample work project, target job description) and a full,
+    grounded answer for each - saved into the Q&A bank as auto_generated=True so a live
+    question that matches gets served near-instantly (see routers/chat.py's fast path)
+    instead of waiting on a fresh generation.
+    """
+    count = max(1, min(body.count, _MAX_PREPARE_COUNT))
+
+    resume = await get_active_material(db, interview.id, "resume")
+    jd = await get_active_material(db, interview.id, "job_description")
+    scenario = await get_active_material(db, interview.id, "real_time_scenario")
+    if not resume and not scenario:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Add a resume or sample work project first - nothing to prepare questions from.",
+        )
+
+    questions = await generate_likely_questions(
+        resume.text if resume else "", jd.text if jd else "", scenario.text if scenario else "", count=count
+    )
+    if not questions:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Could not generate questions - try again.")
+
+    semaphore = asyncio.Semaphore(_PREPARE_CONCURRENCY)
+
+    async def _prepare_one(question: str) -> QAEntry | None:
+        async with semaphore:
+            # Own session per concurrent task - a single AsyncSession can't handle concurrent
+            # operations (see routers/admin.py's evaluate_history for the same fix).
+            async with SessionLocal() as task_db:
+                subject_ids = await get_interview_subject_ids(task_db, interview.id)
+                doc_chunks = await retrieve_relevant_docs(task_db, question, subject_ids)
+            system_prompt = build_system_prompt(
+                resume, jd, scenario, doc_chunks, current_user.answer_format_mode, current_user.answer_length
+            )
+            try:
+                answer = await generate_answer(system_prompt, question)
+            except httpx.HTTPError:
+                return None
+            classification = await _classify_or_fallback(question, answer)
+            return QAEntry(
+                user_id=current_user.id, interview_id=interview.id, question=question, answer=answer,
+                category=classification.category, tags=classification.tags, auto_generated=True,
+            )
+
+    results = await asyncio.gather(*(_prepare_one(q) for q in questions))
+    entries = [e for e in results if e is not None]
+    if not entries:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Could not generate any answers - try again.")
+
+    db.add_all(entries)
+    await db.commit()
+    for entry in entries:
+        await db.refresh(entry)
+    await invalidate_list(interview.id)
+    return PrepareQAResponse(prepared_count=len(entries), entries=[_to_response(e) for e in entries])
 
 
 @router.get("/interviews/{interview_id}/qa", response_model=list[QAEntryResponse])

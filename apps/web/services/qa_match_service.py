@@ -7,10 +7,11 @@ from services.text_relevance_service import has_enough_substantive_terms
 
 
 class QAMatch:
-    def __init__(self, id: UUID, question: str, answer: str):
+    def __init__(self, id: UUID, question: str, answer: str, auto_generated: bool):
         self.id = id
         self.question = question
         self.answer = answer
+        self.auto_generated = auto_generated
 
 
 async def find_matching_qa(db: AsyncSession, interview_id: UUID, question: str) -> QAMatch | None:
@@ -31,7 +32,7 @@ async def find_matching_qa(db: AsyncSession, interview_id: UUID, question: str) 
     result = await db.execute(
         text(
             """
-            SELECT id, question, answer,
+            SELECT id, question, answer, auto_generated,
                    ts_rank(to_tsvector('english', question), websearch_to_tsquery('english', :q)) AS rank
             FROM qa_entries
             WHERE interview_id = :interview_id
@@ -45,4 +46,4 @@ async def find_matching_qa(db: AsyncSession, interview_id: UUID, question: str) 
     row = result.first()
     if not row:
         return None
-    return QAMatch(id=row.id, question=row.question, answer=row.answer)
+    return QAMatch(id=row.id, question=row.question, answer=row.answer, auto_generated=row.auto_generated)

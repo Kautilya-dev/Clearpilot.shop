@@ -200,3 +200,23 @@ async def generate_answer_stream(
                 delta = json.loads(payload)["choices"][0]["delta"].get("content")
                 if delta:
                     yield delta
+
+
+async def generate_answer(system_prompt: str, question: str) -> str:
+    """Non-streaming sibling of generate_answer_stream - for callers that need the full
+    answer at once (services/qa_prepare_service.py generating many answers concurrently
+    ahead of a live session, where there's no client waiting on a live stream)."""
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        response = await client.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {settings.openai_api_key}", "Content-Type": "application/json"},
+            json={
+                "model": OPENAI_CHAT_MODEL,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": question},
+                ],
+            },
+        )
+        response.raise_for_status()
+        return response.json()["choices"][0]["message"]["content"].strip()

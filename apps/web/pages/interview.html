@@ -76,13 +76,17 @@
 
       <!-- Q&A -->
       <div id="panel-qa" class="h-full overflow-y-auto px-4 md:px-8 py-6 hidden">
-        <div class="flex items-center justify-between mb-1">
+        <div class="flex items-center justify-between mb-1 flex-wrap gap-2">
           <p class="text-sm text-gray-500">Category and tags are generated automatically by AI — just save the question and answer.</p>
           <div class="flex gap-2 shrink-0 ml-4">
+            <button id="qa-prepare-btn" class="btn-secondary text-sm" title="Generate likely questions and answers from your Materials, so they answer near-instantly during a live session">
+              <i data-lucide="sparkles" class="w-4 h-4"></i>Prepare from Materials
+            </button>
             <button id="qa-upload-btn" class="btn-secondary text-sm"><i data-lucide="upload" class="w-4 h-4"></i>Upload file</button>
             <button id="qa-add-btn" class="btn-primary text-sm"><i data-lucide="plus" class="w-4 h-4"></i>Add Q&amp;A</button>
           </div>
         </div>
+        <p id="qa-prepare-status" class="text-xs text-gray-500 mb-3 hidden"></p>
         <input type="file" id="qa-file-input" class="hidden" accept=".pdf,.docx,.txt,.md" />
 
         <div id="qa-form" class="border border-gray-200 rounded-2xl p-5 my-4 hidden">
@@ -367,6 +371,7 @@
         </div>
         <p class="text-sm text-gray-600 mb-2">${e.answer}</p>
         <div class="flex items-center gap-1.5 flex-wrap">
+          ${e.auto_generated ? `<span class="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full inline-flex items-center gap-1"><i data-lucide="sparkles" class="w-3 h-3"></i>Prepared</span>` : ''}
           ${e.category ? `<span class="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">${e.category}</span>` : ''}
           ${e.tags.split(',').filter(t => t.trim()).map(t => `<span class="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">${t.trim()}</span>`).join('')}
         </div>
@@ -374,6 +379,31 @@
     `).join('');
     if (window.lucide) lucide.createIcons();
   }
+
+  document.getElementById('qa-prepare-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('qa-prepare-btn');
+    const status = document.getElementById('qa-prepare-status');
+    btn.disabled = true;
+    status.classList.remove('hidden');
+    status.textContent = 'Generating likely questions and grounded answers from your Materials - this can take a minute...';
+    try {
+      const res = await fetch(`/api/interviews/${interviewId}/qa/prepare`, {
+        method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ count: 15 }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        status.textContent = data.detail || 'Could not prepare questions.';
+        return;
+      }
+      status.textContent = `Prepared ${data.prepared_count} question(s) - they'll answer near-instantly if asked during a live session.`;
+      loadQA();
+    } catch (e) {
+      status.textContent = 'Could not reach the server. Try again.';
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   document.getElementById('qa-add-btn').addEventListener('click', () => document.getElementById('qa-form').classList.remove('hidden'));
   document.getElementById('qa-cancel').addEventListener('click', () => document.getElementById('qa-form').classList.add('hidden'));

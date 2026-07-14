@@ -82,6 +82,12 @@ class QAEntry(Base):
     category: Mapped[str] = mapped_column(String, nullable=False, default="")
     tags: Mapped[str] = mapped_column(String, nullable=False, default="")  # comma-separated - simple, no separate table needed yet
     use_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # True for entries created by POST /qa/prepare (services/qa_prepare_service.py) - these were
+    # just generated fresh through the same grounding pipeline live chat uses, so a live match
+    # skips the judge step entirely (routers/chat.py) for near-instant response instead of
+    # paying for another LLM round-trip to re-verify/re-personalize content that's already
+    # accurate and in the right voice.
+    auto_generated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
