@@ -116,27 +116,39 @@ ANSWER_LENGTH_INSTRUCTIONS = {
 # This is a deliberate exception to rule 4's "pick 2-3 points, a focused answer beats a long
 # one" guidance above - only for this format+length combination.
 STAR_DETAILED_LENGTH_INSTRUCTIONS = {
+    # Confirmed live against real interview questions after adding the four labeled
+    # closing sections below: without explicit per-section budgets, answers landed at
+    # 736-790 words - 13-22% over the 650 ceiling - because "comprehensive" plus four
+    # extra mandatory sections reads to the model as license to expand every one of
+    # them, not just the core answer. Giving the core section its own word range and
+    # capping each closing section by SENTENCE COUNT (models hold to "1-2 sentences"
+    # far more reliably than to a word budget) keeps the total inside 500-650 again.
     "one_minute": (
-        "Write a genuinely comprehensive answer, at least 500 words, up to about 650 - this is an "
-        "intentional exception to rule 4's \"pick 2-3 points\" guidance above. Structure it as clearly "
-        "labeled sections so it can be scanned and jumped to at a glance: first the core answer/explanation "
-        "(STAR-labeled if the format above calls for STAR, otherwise plain prose), then a section starting "
-        "with the exact bolded label \"**Example:**\" on its own - one fully concrete walkthrough (reuse "
-        "real details from the candidate's own real-time material below if relevant to the question, "
-        "not a generic invented one), then \"**Practical nuance:**\" - when this applies versus when it "
-        "doesn't (if relevant to the question), then \"**Design approach:**\" - a real-world design "
-        "pattern or approach you follow, and close with \"**Short answer:**\" - a tightly-distilled "
-        "interview-ready version of the same answer (2-4 sentences), reachable without rereading "
-        "everything above it, so the candidate has both the deep understanding and the quick spoken "
-        "version ready. Each of these four labels must appear exactly as shown, bolded, alone at the "
-        "start of its own line/paragraph - not folded into a sentence - so they can be detected and "
+        "Write a comprehensive but disciplined answer, at least 500 words, up to about 650 - treat 650 "
+        "as a hard ceiling, not a suggestion: if you're approaching it, cut the least essential sentence "
+        "rather than keep going. This is an intentional exception to rule 4's \"pick 2-3 points\" "
+        "guidance above, but not an invitation to ramble in every section - only the core section below "
+        "gets real length; the four closing sections must stay terse. Structure it as clearly labeled "
+        "sections so it can be scanned and jumped to at a glance: first the core answer/explanation "
+        "(STAR-labeled if the format above calls for STAR, otherwise plain prose) - this is the bulk of "
+        "the answer, roughly 350-400 words - then four SHORT closing sections that together should add "
+        "no more than 200-250 words: \"**Example:**\" (2-3 sentences) - one fully concrete walkthrough, "
+        "reusing real details from the candidate's own real-time material below if relevant to the "
+        "question, not a generic invented one; \"**Practical nuance:**\" (1-2 sentences) - when this "
+        "applies versus when it doesn't, if relevant to the question; \"**Design approach:**\" (1-2 "
+        "sentences) - a real-world design pattern or approach you follow; and \"**Short answer:**\" (2-4 "
+        "sentences) - a tightly-distilled interview-ready version of the same answer, reachable without "
+        "rereading everything above it, so the candidate has both the deep understanding and the quick "
+        "spoken version ready. Each of these four labels must appear exactly as shown, bolded, alone at "
+        "the start of its own line/paragraph - not folded into a sentence - so they can be detected and "
         "turned into jump-to navigation."
     ),
     "long": (
-        "Write a thorough answer, at least 300 words, up to about 450 - covering the core answer with "
-        "a concrete example labeled \"**Example:**\" (its own bolded line) plus one layer of practical "
-        "nuance labeled \"**Practical nuance:**\" (when it applies, a real design consideration), "
-        "without needing every angle the most comprehensive answer would cover."
+        "Write a thorough answer, at least 300 words, up to about 450 - treat 450 as a hard ceiling. "
+        "The core answer/explanation should be the bulk of it, roughly 250-300 words, plus a concrete "
+        "example labeled \"**Example:**\" (its own bolded line, 2-3 sentences) and one layer of practical "
+        "nuance labeled \"**Practical nuance:**\" (its own bolded line, 1-2 sentences, when it applies, a "
+        "real design consideration), without needing every angle the most comprehensive answer would cover."
     ),
 }
 
