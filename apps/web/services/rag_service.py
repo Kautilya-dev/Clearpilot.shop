@@ -177,6 +177,11 @@ async def generate_answer_stream(system_prompt: str, question: str) -> AsyncIter
                     {"role": "user", "content": question},
                 ],
                 "stream": True,
+                # This task is domain-knowledge recall + structuring, not multi-step logical
+                # reasoning - a low reasoning effort keeps quality while cutting the "thinking"
+                # time before the first visible token streams out, which was the dominant
+                # contributor to time-to-first-chunk, independent of total answer length.
+                "reasoning_effort": "low",
             },
         ) as response:
             response.raise_for_status()
