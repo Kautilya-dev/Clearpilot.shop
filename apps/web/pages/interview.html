@@ -517,16 +517,18 @@
 
     // Only show the "Show full answer" fade/toggle for entries that actually
     // overflow the collapsed height - short manual entries render fully as-is.
-    requestAnimationFrame(() => {
-      listEl.querySelectorAll('.qa-answer-wrap').forEach((wrap) => {
-        const body = wrap.querySelector('.qa-answer');
-        const toggle = wrap.querySelector('.qa-expand-toggle');
-        if (body.scrollHeight - body.clientHeight > 4) {
-          toggle.hidden = false;
-        } else {
-          body.classList.add('qa-noclamp');
-        }
-      });
+    // Reading scrollHeight forces a synchronous layout, so this is safe to do
+    // immediately after the innerHTML assignment above - no rAF needed, and
+    // rAF is best avoided here anyway since it can be throttled on a
+    // backgrounded/inactive tab, leaving the toggle wrongly hidden.
+    listEl.querySelectorAll('.qa-answer-wrap').forEach((wrap) => {
+      const body = wrap.querySelector('.qa-answer');
+      const toggle = wrap.querySelector('.qa-expand-toggle');
+      if (body.scrollHeight - body.clientHeight > 4) {
+        toggle.hidden = false;
+      } else {
+        body.classList.add('qa-noclamp');
+      }
     });
   }
 
