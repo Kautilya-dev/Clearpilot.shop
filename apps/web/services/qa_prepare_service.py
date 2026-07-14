@@ -6,11 +6,14 @@ from config import settings
 
 OPENAI_CHAT_MODEL = "gpt-5.4"
 
+# Note: NOT using str.format() here - the literal JSON braces in the instructions below
+# would collide with format()'s own {placeholder} syntax. Count is spliced in with a plain
+# string replace on this one marker instead.
 QUESTION_GEN_SYSTEM_PROMPT = """You generate a realistic list of SAP CPI interview questions an interviewer would ask THIS SPECIFIC candidate, based on the materials below - their resume (roles & responsibilities) and, if given, a sample work project and target job description.
 
 Cover the roles/responsibilities and project details in roughly the same order they're presented in the resume, favoring depth on what's actually listed over generic textbook questions. Mix technical questions (adapters, mappings, security, error handling, Groovy) with experience/behavioral ones ("tell me about a time...", "why did you...") that this candidate's own background would naturally prompt.
 
-Respond with ONLY a JSON object in this exact shape: {"questions": ["question 1", "question 2", ...]} - exactly {count} questions, no other text."""
+Respond with ONLY a JSON object in this exact shape: {"questions": ["question 1", "question 2", ...]} - exactly __COUNT__ questions, no other text."""
 
 
 async def generate_likely_questions(resume_text: str, jd_text: str, scenario_text: str, count: int = 15) -> list[str]:
@@ -29,7 +32,7 @@ async def generate_likely_questions(resume_text: str, jd_text: str, scenario_tex
             json={
                 "model": OPENAI_CHAT_MODEL,
                 "messages": [
-                    {"role": "system", "content": QUESTION_GEN_SYSTEM_PROMPT.format(count=count)},
+                    {"role": "system", "content": QUESTION_GEN_SYSTEM_PROMPT.replace("__COUNT__", str(count))},
                     {"role": "user", "content": user_message},
                 ],
                 "response_format": {"type": "json_object"},
