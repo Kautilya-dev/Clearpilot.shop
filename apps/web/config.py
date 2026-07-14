@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24 * 30  # 30 days, matches desktop's "stay signed in" expectation
     admin_emails: str = ""  # comma-separated allowlist - "promoting" an admin is just editing this env var
+    # Narrower than admin_emails - grants access to experimental/testing knobs (e.g. chat.py's
+    # reasoning_effort override) without also granting the Admin panel's view into every
+    # user's data. Admins can always use tester-gated features too (see is_admin_or_tester
+    # callers) - this is additive, not a replacement for admin_emails.
+    tester_emails: str = ""
     openai_api_key: str = ""
     # Tigris (S3-compatible) bucket holding the Desktop app installer - served via a
     # presigned URL from routers/downloads.py rather than a public bucket, so the bucket
@@ -27,6 +32,10 @@ class Settings(BaseSettings):
     @property
     def admin_emails_set(self) -> set[str]:
         return {e.strip().lower() for e in self.admin_emails.split(",") if e.strip()}
+
+    @property
+    def tester_emails_set(self) -> set[str]:
+        return {e.strip().lower() for e in self.tester_emails.split(",") if e.strip()}
 
     class Config:
         env_file = _ENV_FILE

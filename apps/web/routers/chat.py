@@ -25,7 +25,7 @@ _VALID_REASONING_EFFORTS = {"minimal", "low", "medium", "high"}
 
 class AskRequest(BaseModel):
     question: str
-    # Admin-only live experiment (see generate_answer_stream) to test whether a lower
+    # Admin/tester-only live experiment (see generate_answer_stream) to test whether a lower
     # reasoning effort cuts time-to-first-chunk without hurting grounding accuracy - ignored
     # for everyone else, so this can't be used to degrade other users' answer quality.
     reasoning_effort: str | None = None
@@ -57,9 +57,12 @@ async def ask(
     # the streamed body finishes (same reason stream() opens its own stream_db below).
     answer_format_mode = current_user.answer_format_mode
     answer_length = current_user.answer_length
-    is_admin = current_user.email.lower() in settings.admin_emails_set
+    user_email = current_user.email.lower()
+    can_use_testing_knobs = user_email in settings.admin_emails_set or user_email in settings.tester_emails_set
     reasoning_effort = (
-        body.reasoning_effort if is_admin and body.reasoning_effort in _VALID_REASONING_EFFORTS else None
+        body.reasoning_effort
+        if can_use_testing_knobs and body.reasoning_effort in _VALID_REASONING_EFFORTS
+        else None
     )
 
     # A keyword candidate from the Q&A bank, if any - not a final decision. Whether it's
