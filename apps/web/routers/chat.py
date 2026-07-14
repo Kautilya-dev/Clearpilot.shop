@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import settings
 from db.base import SessionLocal, get_db
 from db.models import HistoryEntry, Interview, QAEntry, User
 from routers.auth import get_current_user
@@ -19,9 +20,15 @@ from services.rag_service import build_system_prompt, generate_answer_stream, ge
 
 router = APIRouter(tags=["chat"])
 
+_VALID_REASONING_EFFORTS = {"minimal", "low", "medium", "high"}
+
 
 class AskRequest(BaseModel):
     question: str
+    # Admin-only live experiment (see generate_answer_stream) to test whether a lower
+    # reasoning effort cuts time-to-first-chunk without hurting grounding accuracy - ignored
+    # for everyone else, so this can't be used to degrade other users' answer quality.
+    reasoning_effort: str | None = None
 
 
 def _now_iso() -> str:
@@ -50,6 +57,10 @@ async def ask(
     # the streamed body finishes (same reason stream() opens its own stream_db below).
     answer_format_mode = current_user.answer_format_mode
     answer_length = current_user.answer_length
+    is_admin = current_user.email.lower() in settings.admin_emails_set
+    reasoning_effort = (
+        body.reasoning_effort if is_admin and body.reasoning_effort in _VALID_REASONING_EFFORTS else None
+    )
 
     # A keyword candidate from the Q&A bank, if any - not a final decision. Whether it's
     # actually used gets judged inside stream() once resume/JD/scenario are loaded, since
@@ -96,7 +107,7 @@ async def ask(
                 sources_payload = [{"title": c.title, "breadcrumb": c.breadcrumb} for c in doc_chunks]
 
                 try:
-                    async for delta in generate_answer_stream(system_prompt, question):
+                    async for delta in generate_answer_stream(system_prompt, question, reasoning_effort):
                         if first_chunk_monotonic is None:
                             first_chunk_monotonic = time.monotonic()
                             first_chunk_dt = datetime.now(timezone.utc)
@@ -129,6 +140,7 @@ async def ask(
                 round((first_chunk_monotonic - started_monotonic) * 1000) if first_chunk_monotonic else None
             ),
             "duration_ms": round((ended_monotonic - started_monotonic) * 1000),
+            "reasoning_effort": reasoning_effort,  # None means default - lets an admin A/B test confirm what actually ran
         })
 
     return StreamingResponse(

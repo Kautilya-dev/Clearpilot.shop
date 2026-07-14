@@ -162,27 +162,33 @@ def build_system_prompt(
     )
 
 
-async def generate_answer_stream(system_prompt: str, question: str) -> AsyncIterator[str]:
+async def generate_answer_stream(
+    system_prompt: str, question: str, reasoning_effort: str | None = None
+) -> AsyncIterator[str]:
     """Yields text deltas as OpenAI generates them (Chat Completions SSE stream),
-    so the caller can forward each piece to the client as it arrives."""
+    so the caller can forward each piece to the client as it arrives.
+
+    reasoning_effort is admin-only (see chat.py's ask endpoint) - an unvalidated live
+    experiment to see whether a lower effort cuts time-to-first-chunk without hurting
+    grounding accuracy, not something to default on for every user until that's confirmed.
+    """
+    body = {
+        "model": OPENAI_CHAT_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": question},
+        ],
+        "stream": True,
+    }
+    if reasoning_effort:
+        body["reasoning_effort"] = reasoning_effort
+
     async with httpx.AsyncClient(timeout=60.0) as client:
         async with client.stream(
             "POST",
             "https://api.openai.com/v1/chat/completions",
             headers={"Authorization": f"Bearer {settings.openai_api_key}", "Content-Type": "application/json"},
-            json={
-                "model": OPENAI_CHAT_MODEL,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": question},
-                ],
-                "stream": True,
-                # This task is domain-knowledge recall + structuring, not multi-step logical
-                # reasoning - a low reasoning effort keeps quality while cutting the "thinking"
-                # time before the first visible token streams out, which was the dominant
-                # contributor to time-to-first-chunk, independent of total answer length.
-                "reasoning_effort": "low",
-            },
+            json=body,
         ) as response:
             response.raise_for_status()
             async for line in response.aiter_lines():
