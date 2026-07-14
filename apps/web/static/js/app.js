@@ -71,8 +71,15 @@ async function renderSidebarUser() {
     window.location.href = '/login';
     return;
   }
+  // Admin link is server-driven (user.is_admin, computed in auth.py from ADMIN_EMAILS) -
+  // /admin itself still enforces the real access check either way, this just saves an
+  // admin from having to know/type the URL.
+  const adminLink = user.is_admin
+    ? `<a href="/admin" class="sidebar-link"><i data-lucide="shield" class="w-4 h-4"></i>Admin</a>`
+    : '';
   slots.forEach((slot) => {
     slot.innerHTML = `
+      ${adminLink}
       <div class="flex items-center justify-between px-3 py-2">
         <span class="text-sm font-medium text-gray-700 truncate">${user.display_name}</span>
         <button onclick="logout()" class="text-gray-400 hover:text-gray-700" title="Log out">

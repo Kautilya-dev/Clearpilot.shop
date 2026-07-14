@@ -5,6 +5,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import settings
 from db.base import get_db
 from db.models import User
 from services.auth_service import create_access_token, decode_access_token, hash_password, verify_password
@@ -36,6 +37,15 @@ class UserResponse(BaseModel):
     display_name: str
     answer_format_mode: str
     answer_length: str
+    is_admin: bool  # drives the Admin nav link's visibility - server-computed, not client-guessed
+
+
+def _user_response(user: User) -> UserResponse:
+    return UserResponse(
+        id=str(user.id), email=user.email, display_name=user.display_name,
+        answer_format_mode=user.answer_format_mode, answer_length=user.answer_length,
+        is_admin=user.email.lower() in settings.admin_emails_set,
+    )
 
 
 async def get_current_user(
@@ -117,10 +127,7 @@ async def desktop_exchange(body: DesktopExchangeRequest, db: AsyncSession = Depe
 
 @router.get("/me", response_model=UserResponse)
 async def me(current_user: User = Depends(get_current_user)):
-    return UserResponse(
-        id=str(current_user.id), email=current_user.email, display_name=current_user.display_name,
-        answer_format_mode=current_user.answer_format_mode, answer_length=current_user.answer_length,
-    )
+    return _user_response(current_user)
 
 
 class UpdateProfileRequest(BaseModel):
@@ -134,10 +141,7 @@ async def update_profile(
     current_user.display_name = body.display_name
     await db.commit()
     await db.refresh(current_user)
-    return UserResponse(
-        id=str(current_user.id), email=current_user.email, display_name=current_user.display_name,
-        answer_format_mode=current_user.answer_format_mode, answer_length=current_user.answer_length,
-    )
+    return _user_response(current_user)
 
 
 class UpdatePreferencesRequest(BaseModel):
@@ -168,10 +172,7 @@ async def update_preferences(
     current_user.answer_length = body.answer_length
     await db.commit()
     await db.refresh(current_user)
-    return UserResponse(
-        id=str(current_user.id), email=current_user.email, display_name=current_user.display_name,
-        answer_format_mode=current_user.answer_format_mode, answer_length=current_user.answer_length,
-    )
+    return _user_response(current_user)
 
 
 class ChangePasswordRequest(BaseModel):
