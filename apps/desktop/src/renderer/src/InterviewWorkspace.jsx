@@ -253,11 +253,19 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
   // Practice Partner mode - the relayed transcript from the web app's Prompter tab (see
   // apps/web/routers/practice.py) populates jobCurrent.suggestion the same way the AI's
   // speaker-generated answer does in normal Job Mode, just from a different source. A
-  // partner may speak across several pauses, so each arriving chunk appends rather than
-  // replaces - jobCurrentRef.current resets naturally when a round finalizes above.
+  // partner may speak across several pauses, so a genuinely new segment appends rather
+  // than replaces - jobCurrentRef.current resets naturally when a round finalizes above.
+  // The web Prompter's speech engine re-fires isFinal multiple times for what is really
+  // the same growing utterance ("hi", then "hi my name", then "hi my name is Krishna",
+  // each sent over the relay as its own transcript_final) rather than settling once, so
+  // naively appending every arriving chunk reproduced that exact same text as one long
+  // repeated-prefix run-on here. Mirror the same fix used for the web Prompter's own
+  // transcript panel: if the new text is an extension of (or exact repeat of) what's
+  // already accumulated, replace instead of append.
   useEffect(() => {
     window.clearpilot.onPracticeTranscript(({ text }) => {
-      const accumulated = jobCurrentRef.current.suggestion ? `${jobCurrentRef.current.suggestion} ${text}` : text
+      const current = jobCurrentRef.current.suggestion
+      const accumulated = !current ? text : text.startsWith(current) ? text : `${current} ${text}`
       jobCurrentRef.current.suggestion = accumulated
       setJobCurrent((c) => ({ ...c, suggestion: accumulated }))
     })
