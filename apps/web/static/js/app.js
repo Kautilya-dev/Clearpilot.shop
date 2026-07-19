@@ -17,19 +17,27 @@ function logout() {
   window.location.href = '/';
 }
 
+// Returns: a user object on success, null if genuinely not authenticated (no token, or a
+// real 401 - safe to clear the token and send the caller to /login), or undefined if the
+// check itself failed for a reason unrelated to whether the session is valid (a 5xx, a
+// cold start, rate limiting, a network blip). Confirmed live: treating ANY non-2xx as "log
+// out" was clearing perfectly valid tokens and silently bouncing users to /login mid-session
+// over a momentary server hiccup on /api/auth/me - which fires on nearly every page load.
+// Callers must not treat undefined the same as null (see renderSidebarUser below).
 async function fetchCurrentUser() {
   const token = getToken();
   if (!token) return null;
 
   try {
     const res = await fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) {
+    if (res.status === 401) {
       clearToken();
       return null;
     }
+    if (!res.ok) return undefined;
     return await res.json();
   } catch (e) {
-    return null;
+    return undefined;
   }
 }
 
@@ -67,6 +75,10 @@ async function renderSidebarUser() {
   if (slots.length === 0) return;
 
   const user = await fetchCurrentUser();
+  // undefined means the check itself failed (server hiccup, network blip) - not proof the
+  // session is invalid. Leave the sidebar and the user's session alone rather than bouncing
+  // them to /login over something that will very likely succeed on the next request.
+  if (user === undefined) return;
   if (!user) {
     window.location.href = '/login';
     return;
