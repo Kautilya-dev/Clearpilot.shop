@@ -907,6 +907,8 @@
   let prompterRecognition = null;
   let prompterListening = false;
   let prompterInterimEl = null; // the in-progress (not-yet-final) line, updated live word-by-word
+  let prompterLastFinalEl = null; // the most recently committed final line, for merging continuations
+  let prompterLastFinalText = '';
   let practiceSocket = null;
   let practiceConnected = false;
 
@@ -988,13 +990,26 @@
     }
   }
 
+  // Some speech-recognition engines (especially in continuous mode) re-fire isFinal
+  // multiple times for what is really the same growing utterance instead of finalizing
+  // it once - "hi", then "hi my name", then "hi my name is Krishna", each marked final -
+  // rather than a single settled line. Stacking every one of those as its own permanent
+  // line is what produced the exploding repeated-prefix transcript ("hi hi hi hi hi my
+  // hi my hi my name..."). If the new final text is just an extension of the last
+  // committed line, update that line in place instead of appending a new one.
   function appendPrompterLine(text) {
     const transcriptEl = document.getElementById('prompter-transcript');
     transcriptEl.querySelector('.text-center')?.remove();
-    const p = document.createElement('p');
-    p.className = 'text-sm text-gray-800 bg-gray-50 border border-gray-100 rounded-xl px-4 py-2.5';
-    p.textContent = text;
-    transcriptEl.appendChild(p);
+    if (prompterLastFinalEl && prompterLastFinalText && text.startsWith(prompterLastFinalText) && text !== prompterLastFinalText) {
+      prompterLastFinalEl.textContent = text;
+    } else {
+      const p = document.createElement('p');
+      p.className = 'text-sm text-gray-800 bg-gray-50 border border-gray-100 rounded-xl px-4 py-2.5';
+      p.textContent = text;
+      transcriptEl.appendChild(p);
+      prompterLastFinalEl = p;
+    }
+    prompterLastFinalText = text;
     transcriptEl.scrollTop = transcriptEl.scrollHeight;
   }
 
@@ -1054,6 +1069,10 @@
       updatePrompterUI();
       return;
     }
+    // Fresh session - don't let the next utterance get merged into whatever line was
+    // last committed before the previous stop.
+    prompterLastFinalEl = null;
+    prompterLastFinalText = '';
     connectPracticeSocket();
     prompterRecognition = new SpeechRecognition();
     prompterRecognition.continuous = true;
