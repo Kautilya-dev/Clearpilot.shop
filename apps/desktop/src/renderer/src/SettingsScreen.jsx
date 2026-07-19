@@ -1,15 +1,22 @@
+/* ABOUT THIS FILE
+ * Settings screen - a tabbed shell (Account/Answer Template/OpenAI/Styling/Behaviour/
+ * Update) rendered by App.jsx. Each tab is its own component file; this file only owns tab
+ * switching and the OpenAI API key form (small enough not to warrant its own file).
+ */
 import { useState, useEffect } from 'react'
 import AccountTab from './AccountTab'
 import AnswerTemplateTab from './AnswerTemplateTab'
 import StylingTab from './StylingTab'
 import BehaviourTab from './BehaviourTab'
+import UpdateTab from './UpdateTab'
 
 const TABS = [
   { key: 'account', label: 'Account' },
   { key: 'template', label: 'Answer Template' },
   { key: 'openai', label: 'OpenAI' },
   { key: 'styling', label: 'Styling' },
-  { key: 'behaviour', label: 'Behaviour' }
+  { key: 'behaviour', label: 'Behaviour' },
+  { key: 'update', label: 'Update' }
 ]
 
 function OpenAITab() {
@@ -102,7 +109,12 @@ export default function SettingsScreen({ user, onProfileUpdated, onAccountDelete
         {activeTab === 'openai' && <OpenAITab />}
         {activeTab === 'styling' && <StylingTab />}
         {activeTab === 'behaviour' && <BehaviourTab />}
+        {activeTab === 'update' && <UpdateTab />}
       </div>
     </main>
   )
 }
+
+/* UPDATES LOG
+ * 2026-07-20 - Added the "Update" tab (UpdateTab.jsx) for the new manual auto-update feature.
+ */

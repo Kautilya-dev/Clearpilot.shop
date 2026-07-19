@@ -1,6 +1,17 @@
+/* ABOUT THIS FILE
+ * Electron main process - owns the BrowserWindow, all IPC handlers the renderer calls via
+ * window.clearpilot (see src/preload/index.js for the bridge, src/renderer/src/*.jsx for
+ * callers), the two Realtime API sessions (speaker/mic) used by both Copilot's standalone
+ * listening and the Prompter tab, the Practice Partner WebSocket relay to the web app's
+ * Prompter tab (apps/web/routers/practice.py), and the desktop auto-update flow (checks/
+ * downloads/installs a new build via the same presigned-download endpoints the website's
+ * Download page uses, apps/web/routers/downloads.py).
+ */
 const { app, BrowserWindow, ipcMain, shell, session, desktopCapturer } = require('electron')
 const http = require('http')
 const path = require('path')
+const fs = require('fs')
+const { spawn } = require('child_process')
 const WebSocket = require('ws')
 const StealthManager = require('../modules/stealthManager')
 const authStore = require('./auth-store')
@@ -13,23 +24,21 @@ let stealth = null
 let callbackServer = null
 
 // One RealtimeSessionManager per device, started/stopped independently via the
-// listening:* IPC handlers below. Both can be active simultaneously (Judge mode).
+// listening:* IPC handlers below. speakerSession is shared by Copilot's standalone
+// "Speaker" listening mode and the Prompter tab's AI Generated Response panel; micSession
+// is only used by Copilot's standalone "Mic" mode now - the Prompter tab no longer listens
+// to the candidate's mic at all (no AI judge/comparison feature - see JudgeTab.jsx's
+// removal in favor of PrompterTab.jsx).
 let speakerSession = null
 let micSession = null
 let speakerStopIntentional = false
 let micStopIntentional = false
 
-// Practice Partner mode: a second person, on their own Desktop/web client logged into the
-// same account, speaks the answer instead of the AI. practiceRelay is a `ws` client to the
-// backend's Redis-Pub/Sub relay (apps/web/routers/practice.py), keyed by interview_id - no
-// join code needed since pairing is implicit (same account, same interview). isPartnerMode
-// gates the speaker-answer-callback injection inside registerIpcHandlers so the AI's own
-// generated answer doesn't overwrite the judge's reference once a real partner is providing
-// it - kept as module-level state (like speakerSession/micSession above) even though the
-// functions that use it live inside registerIpcHandlers, where judgeInstructionsWithSuggestion
-// is in scope.
+// Practice Partner relay: the desktop's Prompter tab connects to the backend's
+// Redis-Pub/Sub relay (apps/web/routers/practice.py) so the web app's Prompter tab can
+// stream its live transcript in here as the "Web Prompter Transcription" panel - keyed by
+// interview_id, no join code needed since pairing is implicit (same account, same interview).
 let practiceRelay = null
-let isPartnerMode = false
 
 // Focus Mode shrinks the same window into a compact floating widget rather than opening a
 // second BrowserWindow - this remembers what bounds to restore on Dashboard-return. Always-on-top
@@ -528,13 +537,8 @@ function registerIpcHandlers() {
     return { success: true }
   })
 
-  // true when both sessions run together (Job Mode) — used to update mic instructions
-  // with the speaker's suggestion so the judge has context.
-  let isJobMode = false
-
   // Answer Template preference (account-level, shared with the web app) - shapes the
-  // generated ANSWER only. Deliberately not applied to JUDGE_INITIAL_INSTRUCTIONS /
-  // judgeInstructionsWithSuggestion below, which are coaching commentary, not an answer.
+  // generated ANSWER only.
   const FORMAT_MODE_INSTRUCTIONS = {
     bullets: 'Structure the answer as bullet points covering the key ideas - the bullet that introduces a **bolded** term should also unpack it with a brief example.',
     star: 'Structure the answer using the STAR method: Situation, Task, Action, Result, labelling each part - keep each part to a sentence or two so the whole thing still fits the word-count target below.',
@@ -594,20 +598,6 @@ function registerIpcHandlers() {
     )
   }
 
-  const JUDGE_INITIAL_INSTRUCTIONS =
-    'You are an interview coach in Job Mode. Listen to what the candidate says. ' +
-    'When they finish speaking, give 2-3 sentences of feedback: what they said well and one specific thing to improve. ' +
-    ENGLISH_ONLY_INSTRUCTION
-
-  function judgeInstructionsWithSuggestion(suggestion) {
-    return (
-      `You are an interview coach. The ideal answer to the interviewer's question was: "${suggestion}". ` +
-      "Now listen to what the candidate actually says. When they finish, give 2-3 sentences of feedback: " +
-      'what they said well compared to the ideal answer, and one specific thing to improve. ' +
-      ENGLISH_ONLY_INSTRUCTION
-    )
-  }
-
   function wsUrl(urlPath) {
     return apiClient.BASE_URL.replace(/^http/, 'ws') + urlPath
   }
@@ -631,10 +621,6 @@ function registerIpcHandlers() {
       console.log('[practice] received:', payload.type, payload.text ? `"${payload.text}"` : '')
       if (payload.type === 'transcript_final' && payload.text) {
         mainWindow?.webContents.send('practice:transcript', { text: payload.text })
-        // Same injection point the AI-generated speaker suggestion uses below - the judge
-        // session doesn't need to know whether the "ideal answer" came from the AI or a
-        // real partner speaking it in the web app's Prompter tab.
-        if (micSession) micSession.updateInstructions(judgeInstructionsWithSuggestion(payload.text))
       } else if (payload.type === 'guest_joined') {
         mainWindow?.webContents.send('practice:guestStatus', { connected: true })
       } else if (payload.type === 'guest_left') {
@@ -662,14 +648,6 @@ function registerIpcHandlers() {
       })
       manager.setAnswerCallback((text) => {
         mainWindow?.webContents.send('listening:answer', { source, text })
-        // Job Mode: when speaker GPT answers, inject that suggestion into the mic judge session
-        // so it has context when the candidate speaks. Skipped in Practice Partner mode - the
-        // speaker session still runs (for the interviewer-question transcript/context above),
-        // but the judge's reference answer comes from the relayed partner instead (see
-        // connectPracticeRelay's 'transcript_final' handler, which calls updateInstructions itself).
-        if (isJobMode && !isPartnerMode && source === 'speaker' && micSession) {
-          micSession.updateInstructions(judgeInstructionsWithSuggestion(text))
-        }
       })
       manager.setErrorCallback(async (error) => {
         const wasIntentional = source === 'speaker' ? speakerStopIntentional : micStopIntentional
@@ -705,28 +683,20 @@ function registerIpcHandlers() {
     const user = token ? await apiClient.getCurrentUser(token).catch(() => null) : null
     const sapInstructions = buildSapInstructions(user?.answer_format_mode || 'bullets', user?.answer_length || 'medium')
 
-    if (source === 'both' || source === 'partner') {
-      isJobMode = true
-      isPartnerMode = source === 'partner'
-      // Start both sessions concurrently — speaker as SAP assistant (or, in partner mode,
-      // just for interviewer-question transcript/context - see the gated injection above),
-      // mic as judge
-      const [sr, mr] = await Promise.all([
-        startSingleSession(interviewId, 'speaker', sapInstructions),
-        startSingleSession(interviewId, 'mic', JUDGE_INITIAL_INSTRUCTIONS)
-      ])
+    if (source === 'prompter') {
+      // Prompter tab: the Speaker session transcribes the interviewer's question and
+      // generates the AI Generated Response panel's suggested answer - no mic session,
+      // no AI judge/comparison of anything the candidate says (removed entirely). The
+      // Web Prompter Transcription panel connects independently via the practice relay
+      // below, regardless of whether the AI Generated Response panel is enabled
+      // client-side - that's a display-only toggle in the renderer, not a session gate.
+      const sr = await startSingleSession(interviewId, 'speaker', sapInstructions)
       if (!sr.success) return sr
-      if (!mr.success) return mr
-      if (isPartnerMode && token) connectPracticeRelay(interviewId, token)
+      if (token) connectPracticeRelay(interviewId, token)
       return { success: true }
     }
-    isJobMode = false
-    isPartnerMode = false
-    // Copilot mode (single device, not Job Mode): both Speaker and Mic are alternative ways
-    // to ASK the same Copilot a question and get a real SAP CPI answer - Mic used to get
-    // JUDGE_INITIAL_INSTRUCTIONS (coaching feedback), which only makes sense in Job Mode
-    // where there's a suggested answer to compare against. Here there isn't one - the
-    // candidate is just asking, exactly like Speaker already does.
+    // Copilot mode (single device): Speaker and Mic are alternative ways to ASK the same
+    // Copilot a question and get a real SAP CPI answer.
     return startSingleSession(interviewId, source, sapInstructions)
   }
 
@@ -735,29 +705,27 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle('listening:stop', async (event, { source }) => {
-    if (source === 'speaker' || source === 'both' || source === 'partner') {
+    if (source === 'speaker' || source === 'prompter') {
       speakerStopIntentional = true
       speakerSession?.disconnect()
       speakerSession = null
     }
-    if (source === 'mic' || source === 'both' || source === 'partner') {
+    if (source === 'mic') {
       micStopIntentional = true
       micSession?.disconnect()
       micSession = null
     }
-    if (source === 'both' || source === 'partner') {
-      isJobMode = false
-      isPartnerMode = false
+    if (source === 'prompter') {
       disconnectPracticeRelay()
     }
     return { success: true }
   })
 
-  ipcMain.handle('practice:saveRound', async (event, { interviewId, partnerAnswer, yourResponse, coachFeedback }) => {
+  ipcMain.handle('practice:saveSession', async (event, { interviewId, webTranscript, aiResponse }) => {
     const token = authStore.getCachedToken()
     if (!token) return { success: false, error: 'Not signed in' }
     try {
-      const entry = await apiClient.savePracticeHistoryEntry(token, interviewId, { partnerAnswer, yourResponse, coachFeedback })
+      const entry = await apiClient.savePrompterSession(token, interviewId, { webTranscript, aiResponse })
       return { success: true, entry }
     } catch (error) {
       return { success: false, error: error.message }
@@ -768,6 +736,38 @@ function registerIpcHandlers() {
     const targetSession = source === 'speaker' ? speakerSession : micSession
     if (!targetSession) return { success: false, message: 'No active session' }
     return targetSession.sendAudioChunk(Buffer.from(base64Data, 'base64'))
+  })
+
+  // Auto-update - fully user-triggered from Settings -> Update tab, nothing runs on launch.
+  // Reuses the website's existing presigned-download infrastructure (downloads.py) instead
+  // of a dedicated update-manifest host: /download/latest-version returns the current
+  // release's version string, /download/windows is the same presigned installer URL the
+  // website's Download page already uses. Downloads the full installer into memory (this
+  // app is ~92MB - simple and reliable beats streaming-with-progress for a personal
+  // project) and launches it silently (NSIS /S - this build is per-user/no-elevation, see
+  // package.json's build.nsis config, so no UAC prompt), then quits so the installer can
+  // replace the running app's files.
+  ipcMain.handle('update:check', async () => {
+    try {
+      const { version: latestVersion } = await apiClient.fetchLatestVersion()
+      const currentVersion = app.getVersion()
+      return { success: true, currentVersion, latestVersion, available: latestVersion !== currentVersion }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('update:apply', async () => {
+    try {
+      const installerBuffer = await apiClient.downloadInstaller()
+      const tempPath = path.join(app.getPath('temp'), 'ClearPilot-Update.exe')
+      fs.writeFileSync(tempPath, installerBuffer)
+      spawn(tempPath, ['/S'], { detached: true, stdio: 'ignore' }).unref()
+      setTimeout(() => app.quit(), 800)
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
   })
 }
 
@@ -791,3 +791,15 @@ if (!gotLock) {
     if (process.platform !== 'darwin') app.quit()
   })
 }
+
+/* UPDATES LOG
+ * 2026-07-20 - Removed the AI judge entirely (JUDGE_INITIAL_INSTRUCTIONS,
+ *   judgeInstructionsWithSuggestion, isJobMode, isPartnerMode, and the mic-session
+ *   judge-injection in both startSingleSession's answer callback and connectPracticeRelay's
+ *   message handler) - Job Mode and Practice Partner merged into a single "Prompter" mode
+ *   (source: 'prompter') that runs only the Speaker session (AI Generated Response) and the
+ *   practice relay (Web Prompter Transcription), with no mic listening or comparison of the
+ *   candidate's spoken response. Renamed practice:saveRound -> practice:saveSession with a
+ *   {webTranscript, aiResponse} shape (was {partnerAnswer, yourResponse, coachFeedback}).
+ *   Added update:check / update:apply IPC handlers for the new Settings -> Update tab.
+ */

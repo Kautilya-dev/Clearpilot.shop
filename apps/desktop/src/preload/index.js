@@ -1,3 +1,11 @@
+/* ABOUT THIS FILE
+ * Electron preload script - runs in an isolated context bridging the sandboxed renderer
+ * (src/renderer/src/*.jsx, which calls window.clearpilot.*) to the main process's IPC
+ * handlers (src/main/index.js's ipcMain.handle(...) calls, one per channel name here).
+ * contextIsolation is on (see main/index.js's BrowserWindow webPreferences), so this is the
+ * only way renderer code reaches Node/Electron APIs - nothing here should contain real
+ * logic, just a thin invoke/on wrapper per channel.
+ */
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('clearpilot', {
@@ -73,10 +81,10 @@ contextBridge.exposeInMainWorld('clearpilot', {
     ipcRenderer.removeAllListeners('listening:error')
   },
 
-  // Practice Partner mode - reuses startListening/stopListening above with source: 'partner';
-  // these are just the extra events/calls specific to that mode.
-  savePracticeRound: (interviewId, partnerAnswer, yourResponse, coachFeedback) =>
-    ipcRenderer.invoke('practice:saveRound', { interviewId, partnerAnswer, yourResponse, coachFeedback }),
+  // Prompter tab - reuses startListening/stopListening above with source: 'prompter'; these
+  // are just the extra events/calls specific to that mode's Web Prompter Transcription panel.
+  savePrompterSession: (interviewId, webTranscript, aiResponse) =>
+    ipcRenderer.invoke('practice:saveSession', { interviewId, webTranscript, aiResponse }),
   onPracticeTranscript: (callback) => {
     ipcRenderer.on('practice:transcript', (event, data) => callback(data))
   },
@@ -91,6 +99,11 @@ contextBridge.exposeInMainWorld('clearpilot', {
     ipcRenderer.removeAllListeners('practice:guestStatus')
     ipcRenderer.removeAllListeners('practice:relayError')
   },
+
+  // Auto-update (Settings -> Update tab) - see main/index.js's update:check/update:apply
+  // handlers for what actually happens; this is just the bridge.
+  checkForUpdate: () => ipcRenderer.invoke('update:check'),
+  applyUpdate: () => ipcRenderer.invoke('update:apply'),
 
   listMaterials: (interviewId) => ipcRenderer.invoke('materials:list', { interviewId }),
   createMaterial: (interviewId, type, name, text) =>
@@ -107,3 +120,9 @@ contextBridge.exposeInMainWorld('clearpilot', {
   updateQa: (interviewId, entryId, updates) => ipcRenderer.invoke('qa:update', { interviewId, entryId, updates }),
   deleteQa: (interviewId, entryId) => ipcRenderer.invoke('qa:delete', { interviewId, entryId })
 })
+
+/* UPDATES LOG
+ * 2026-07-20 - Renamed savePracticeRound -> savePrompterSession (new {webTranscript,
+ *   aiResponse} shape, no more coachFeedback/yourResponse - the AI judge was removed).
+ *   Added checkForUpdate/applyUpdate bridges for the new Settings -> Update tab.
+ */

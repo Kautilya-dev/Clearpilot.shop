@@ -1,10 +1,20 @@
+/* ABOUT THIS FILE
+ * Owns all state shared between the Copilot tab (CopilotScreen.jsx) and the Prompter tab
+ * (PrompterTab.jsx) - the chat/history state, the audio-capture hook, and the Realtime
+ * listening-session state machine (listenMode) - since both tabs render simultaneously
+ * (hidden via CSS, not unmounted, so switching tabs doesn't kill an in-progress session or
+ * conversation) and only one place should own the window.clearpilot IPC event subscriptions.
+ * Rendered by App.jsx once an interview is selected; renders MaterialsTab, QATab,
+ * CopilotScreen, PrompterTab, and (only for Copilot's Focus Mode - Prompter no longer has
+ * one) FocusWidget as children.
+ */
 import { useEffect, useRef, useState } from 'react'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import MaterialsTab from './MaterialsTab'
 import QATab from './QATab'
 import CopilotScreen from './CopilotScreen'
-import JudgeTab from './JudgeTab'
+import PrompterTab from './PrompterTab'
 import FocusWidget from './FocusWidget'
 import { useAudioCapture } from './hooks/useAudioCapture'
 
@@ -12,7 +22,7 @@ const TABS = [
   { key: 'materials', label: 'Materials' },
   { key: 'qa', label: 'Q&A' },
   { key: 'copilot', label: 'Copilot' },
-  { key: 'judge', label: 'Job Mode' }
+  { key: 'prompter', label: 'Prompter' }
 ]
 
 function renderMarkdown(text) {
@@ -20,7 +30,7 @@ function renderMarkdown(text) {
 }
 
 // Chat exchange state (history/streaming) and the audio-capture hook are lifted up here,
-// shared between CopilotScreen and JudgeTab - both need to react to the same chat:event
+// shared between CopilotScreen and PrompterTab - both need to react to the same chat:event
 // stream and drive the same mic/speaker sessions, and only one place should own the
 // window.clearpilot.onChatEvent subscription (two independent subscribers would both have
 // to call offChatEvent's removeAllListeners on cleanup, which would silently kill the other).
@@ -30,7 +40,6 @@ function renderMarkdown(text) {
 // doesn't), leaving Sidebar/TitleBar hidden while this component renders its normal tab UI.
 export default function InterviewWorkspace({ interview, onBack, focusMode, onFocusModeChange }) {
   const [activeTab, setActiveTab] = useState('copilot')
-  const [focusSource, setFocusSource] = useState(null)
 
   const [history, setHistory] = useState([])
   const [historyLoading, setHistoryLoading] = useState(true)
@@ -43,30 +52,24 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
   const audioCapture = useAudioCapture()
   // listenModeRef mirrors listenMode without closure-staleness in IPC callbacks
   const listenModeRef = useRef('off')
-  const [listenMode, setListenMode] = useState('off') // 'off' | 'speaker' | 'mic' | 'both' | 'partner'
+  const [listenMode, setListenMode] = useState('off') // 'off' | 'speaker' | 'mic' | 'prompter'
   const [speakerTranscript, setSpeakerTranscript] = useState('')
   const [listenError, setListenError] = useState('')
-  // Practice Partner mode - whether the web app's Prompter tab is currently connected to
-  // this session's relay (see JudgeTab.jsx's TeleprompterPanel).
+  // Prompter tab - whether the web app's Prompter tab is currently connected to this
+  // session's relay (see PrompterTab.jsx's Web Prompter Transcription panel).
   const [guestConnected, setGuestConnected] = useState(false)
 
-  // Job Mode round state — each round: { id, question, suggestion, response, feedback }
-  const jobCurrentRef = useRef({ question: '', suggestion: '', response: '' })
-  const [jobCurrent, setJobCurrent] = useState({ question: '', suggestion: '', response: '', feedback: '' })
-  const [jobRounds, setJobRounds] = useState([])
-  const roundIdRef = useRef(0) // stable ids so Focus Mode's pin feature survives new rounds shifting array positions
-  // Which Job Mode rounds are pinned in the Focus Mode widget - lifted here (not local to
-  // FocusWidget) so pins survive exiting and re-entering Focus Mode, not just remounts within it.
-  const [pinnedRoundIds, setPinnedRoundIds] = useState(() => new Set())
-
-  function toggleRoundPin(id) {
-    setPinnedRoundIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
+  // Prompter tab's AI Generated Response panel - what the Speaker session heard/generated
+  // from system audio. No judging/comparison of anything the candidate says - removed
+  // entirely along with Job Mode's AI judge (see PrompterTab.jsx, formerly JudgeTab.jsx).
+  const aiResponseRef = useRef({ question: '', answer: '' })
+  const [aiResponse, setAiResponse] = useState({ question: '', answer: '' })
+  // Prompter tab's Web Prompter Transcription panel - the live relay from the web app's
+  // Prompter tab, independent of aiResponse above (both panels run simultaneously now,
+  // unlike the old Job Mode/Practice Partner split where only one suggestion source was
+  // ever active at a time).
+  const partnerTranscriptRef = useRef('')
+  const [partnerTranscript, setPartnerTranscript] = useState('')
 
   // Load past conversation so the user can continue exactly where they left off - re-runs
   // every time the Copilot tab itself is opened (not just on first mount), so a question
@@ -78,8 +81,8 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
     if (activeTab !== 'copilot') return
     window.clearpilot.getHistory(interview.id, 100).then((res) => {
       if (res.success && res.entries?.length) {
-        // /history is shared with Practice Partner's saved rounds (see savePracticeRound
-        // above, apps/web/routers/history.py) - exclude those here so a practice round
+        // /history is shared with Prompter's saved sessions (see savePrompterSession
+        // above, apps/web/routers/history.py) - exclude those here so a Prompter session
         // doesn't show up as a Copilot Q&A exchange.
         setHistory(
           res.entries
@@ -140,108 +143,41 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
   }, [])
 
   const speakerTranscriptRef = useRef('')
-  // The Realtime API fires the mic's transcription-completed and response-done events as
-  // two independent streams with no ordering guarantee - the judge's feedback can arrive
-  // before the transcript of what the candidate actually said. Discovered from a real saved
-  // Practice Partner round whose "Your response" came back empty even though the feedback
-  // clearly reacted to real speech. These hold a feedback that arrived first until the
-  // matching transcript catches up (or a short timeout elapses, so a round can't get stuck).
-  const pendingMicFeedbackRef = useRef(null)
-  const pendingMicFeedbackTimeoutRef = useRef(null)
-
-  function finalizeMicRound(feedbackText) {
-    const round = {
-      id: ++roundIdRef.current,
-      question: jobCurrentRef.current.question,
-      suggestion: jobCurrentRef.current.suggestion,
-      response: jobCurrentRef.current.response,
-      feedback: feedbackText
-    }
-    const wasPartnerRound = listenModeRef.current === 'partner'
-    jobCurrentRef.current = { question: '', suggestion: '', response: '' }
-    setJobCurrent({ question: '', suggestion: '', response: '', feedback: '' })
-    setJobRounds((r) => [round, ...r])
-    // Regular AI-vs-candidate Job Mode rounds aren't persisted (matches existing behavior) -
-    // only practice-partner rounds get saved to History.
-    if (wasPartnerRound) {
-      window.clearpilot.savePracticeRound(interview.id, round.suggestion, round.response, feedbackText)
-    }
-  }
 
   useEffect(() => {
     window.clearpilot.onListeningQuestion(({ source, text }) => {
-      if (source === 'speaker') {
-        speakerTranscriptRef.current = text
-        setSpeakerTranscript(text)
-        if (listenModeRef.current === 'both' || listenModeRef.current === 'partner') {
-          jobCurrentRef.current.question = text
-          setJobCurrent((c) => ({ ...c, question: text }))
-        }
-      } else if (source === 'mic' && (listenModeRef.current === 'both' || listenModeRef.current === 'partner')) {
-        // What the candidate actually said in Job Mode
-        jobCurrentRef.current.response = text
-        setJobCurrent((c) => ({ ...c, response: text }))
-        // The judge's feedback may already be waiting on this exact transcript - see the
-        // pendingMicFeedbackRef comment above.
-        if (pendingMicFeedbackRef.current !== null) {
-          clearTimeout(pendingMicFeedbackTimeoutRef.current)
-          const feedbackText = pendingMicFeedbackRef.current
-          pendingMicFeedbackRef.current = null
-          finalizeMicRound(feedbackText)
-        }
+      if (source !== 'speaker') return // 'mic' question events are unused now - no judge to feed them to
+      speakerTranscriptRef.current = text
+      setSpeakerTranscript(text)
+      if (listenModeRef.current === 'prompter') {
+        aiResponseRef.current.question = text
+        setAiResponse((c) => ({ ...c, question: text }))
       }
     })
 
     window.clearpilot.onListeningAnswer(({ source, text }) => {
       if (source === 'speaker') {
-        if (listenModeRef.current === 'both') {
-          // Job Mode: speaker GPT answer is the suggestion — don't push to copilot history
-          jobCurrentRef.current.suggestion = text
-          setJobCurrent((c) => ({ ...c, suggestion: text }))
-          speakerTranscriptRef.current = ''
-          setSpeakerTranscript('')
-        } else if (listenModeRef.current === 'partner') {
-          // Practice Partner mode: the speaker session still transcribes the interviewer's
-          // question (above), but its own generated answer goes unused here - the judge's
-          // reference answer comes from the relayed partner transcript instead (see the
-          // onPracticeTranscript effect below), not from this local AI-generated one.
-          speakerTranscriptRef.current = ''
-          setSpeakerTranscript('')
+        if (listenModeRef.current === 'prompter') {
+          // Prompter tab: speaker GPT answer feeds the AI Generated Response panel - don't
+          // push to Copilot history, that panel has its own display (see PrompterTab.jsx).
+          aiResponseRef.current.answer = text
+          setAiResponse((c) => ({ ...c, answer: text }))
         } else {
           // Copilot mode: push speaker answer directly into conversation history
           const question = speakerTranscriptRef.current || '🎤 Speaker'
-          speakerTranscriptRef.current = ''
-          setSpeakerTranscript('')
           const html = renderMarkdown(text)
           setHistory((h) => [{ question, html, sources: [], badge: '🎤 Live audio', timing: null }, ...h])
         }
+        speakerTranscriptRef.current = ''
+        setSpeakerTranscript('')
       } else if (source === 'mic') {
-        if (listenModeRef.current === 'both' || listenModeRef.current === 'partner') {
-          // Job Mode: mic GPT answer is the judge's feedback. Usually the response transcript
-          // (onListeningQuestion's mic branch above) has already arrived by now - finalize
-          // right away. But the Realtime API doesn't guarantee that order, so if it hasn't,
-          // hold this feedback and let the transcript's arrival finalize the round instead
-          // (with a timeout fallback in case the transcript never shows up at all).
-          if (jobCurrentRef.current.response) {
-            finalizeMicRound(text)
-          } else {
-            pendingMicFeedbackRef.current = text
-            pendingMicFeedbackTimeoutRef.current = setTimeout(() => {
-              if (pendingMicFeedbackRef.current !== null) {
-                const feedbackText = pendingMicFeedbackRef.current
-                pendingMicFeedbackRef.current = null
-                finalizeMicRound(feedbackText)
-              }
-            }, 2500)
-          }
-        } else {
-          // Copilot mode: push mic answer directly into conversation history
-          const question = speakerTranscriptRef.current || '🎤 Mic'
-          speakerTranscriptRef.current = ''
-          setSpeakerTranscript('')
-          const html = renderMarkdown(text)
-          setHistory((h) => [{ question, html, sources: [], badge: '🎤 Live audio', timing: null }, ...h])
-        }
+        // Copilot mode only now - the Prompter tab never starts a mic session (no AI judge/
+        // comparison of the candidate's spoken response anymore).
+        const question = speakerTranscriptRef.current || '🎤 Mic'
+        speakerTranscriptRef.current = ''
+        setSpeakerTranscript('')
+        const html = renderMarkdown(text)
+        setHistory((h) => [{ question, html, sources: [], badge: '🎤 Live audio', timing: null }, ...h])
       }
     })
 
@@ -250,24 +186,23 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Practice Partner mode - the relayed transcript from the web app's Prompter tab (see
-  // apps/web/routers/practice.py) populates jobCurrent.suggestion the same way the AI's
-  // speaker-generated answer does in normal Job Mode, just from a different source. A
-  // partner may speak across several pauses, so a genuinely new segment appends rather
-  // than replaces - jobCurrentRef.current resets naturally when a round finalizes above.
-  // The web Prompter's speech engine re-fires isFinal multiple times for what is really
-  // the same growing utterance ("hi", then "hi my name", then "hi my name is Krishna",
-  // each sent over the relay as its own transcript_final) rather than settling once, so
-  // naively appending every arriving chunk reproduced that exact same text as one long
-  // repeated-prefix run-on here. Mirror the same fix used for the web Prompter's own
-  // transcript panel: if the new text is an extension of (or exact repeat of) what's
-  // already accumulated, replace instead of append.
+  // Prompter tab's Web Prompter Transcription panel - the relayed transcript from the web
+  // app's Prompter tab (see apps/web/routers/practice.py), independent of aiResponse above.
+  // A partner may speak across several pauses, so a genuinely new segment appends rather
+  // than replaces - partnerTranscriptRef resets when the Prompter session stops (see
+  // stopListening below). The web Prompter's speech engine re-fires isFinal multiple times
+  // for what is really the same growing utterance ("hi", then "hi my name", then "hi my
+  // name is Krishna", each sent over the relay as its own transcript_final) rather than
+  // settling once, so naively appending every arriving chunk reproduced that exact same
+  // text as one long repeated-prefix run-on here. Mirror the same fix used for the web
+  // Prompter's own transcript panel: if the new text is an extension of (or exact repeat
+  // of) what's already accumulated, replace instead of append.
   useEffect(() => {
     window.clearpilot.onPracticeTranscript(({ text }) => {
-      const current = jobCurrentRef.current.suggestion
+      const current = partnerTranscriptRef.current
       const accumulated = !current ? text : text.startsWith(current) ? text : `${current} ${text}`
-      jobCurrentRef.current.suggestion = accumulated
-      setJobCurrent((c) => ({ ...c, suggestion: accumulated }))
+      partnerTranscriptRef.current = accumulated
+      setPartnerTranscript(accumulated)
     })
     window.clearpilot.onPracticeGuestStatus(({ connected }) => setGuestConnected(connected))
     window.clearpilot.onPracticeError(({ message }) => setListenError(message))
@@ -306,14 +241,12 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
   async function startListening(source) {
     setListenError('')
     // Capture audio first so device names appear immediately, independent of WS connect time.
-    if (source === 'speaker') {
+    // 'prompter' only ever needs Speaker capture - no mic session starts for it anymore.
+    if (source === 'speaker' || source === 'prompter') {
       const captureRes = await audioCapture.startSpeakerCapture()
       if (!captureRes.success) { setListenError(captureRes.message); return }
     } else if (source === 'mic') {
       const captureRes = await audioCapture.startMicCapture()
-      if (!captureRes.success) { setListenError(captureRes.message); return }
-    } else if (source === 'both' || source === 'partner') {
-      const captureRes = await audioCapture.startBothCapture()
       if (!captureRes.success) { setListenError(captureRes.message); return }
     }
     listenModeRef.current = source
@@ -324,16 +257,24 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
 
   async function stopListening() {
     const mode = listenModeRef.current
-    if (mode === 'speaker') {
-      await window.clearpilot.stopListening('speaker')
+    if (mode === 'speaker' || mode === 'prompter') {
+      await window.clearpilot.stopListening(mode)
       audioCapture.stopSpeakerCapture()
     } else if (mode === 'mic') {
       await window.clearpilot.stopListening('mic')
       audioCapture.stopMicCapture()
-    } else if (mode === 'both' || mode === 'partner') {
-      await window.clearpilot.stopListening(mode)
-      audioCapture.stopBothCapture()
     }
+    // Save whatever the Prompter session captured (either panel, or both) to the shared
+    // History so it can be reviewed later regardless of which side was live - see
+    // apps/web/routers/history.py's save_prompter_session. Nothing to save if neither
+    // panel ever got any content (e.g. session was started and immediately stopped).
+    if (mode === 'prompter' && (aiResponseRef.current.answer || partnerTranscriptRef.current)) {
+      window.clearpilot.savePrompterSession(interview.id, partnerTranscriptRef.current, aiResponseRef.current.answer)
+    }
+    aiResponseRef.current = { question: '', answer: '' }
+    setAiResponse({ question: '', answer: '' })
+    partnerTranscriptRef.current = ''
+    setPartnerTranscript('')
     listenModeRef.current = 'off'
     setListenMode('off')
     setSpeakerTranscript('')
@@ -353,9 +294,10 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
   // Focus Mode shrinks the window into a floating widget rather than opening a second
   // BrowserWindow - InterviewWorkspace stays mounted underneath so the audio session above
   // is never interrupted, and onFocusModeChange bubbles the flag up to App.jsx so it can hide
-  // the TitleBar/Sidebar, which are siblings of this component, not descendants.
-  async function enterFocusMode(source) {
-    setFocusSource(source)
+  // the TitleBar/Sidebar, which are siblings of this component, not descendants. Copilot-only
+  // now (the Prompter tab has no entry point into it - see PrompterTab.jsx), so there's no
+  // longer a "source" to track.
+  async function enterFocusMode() {
     onFocusModeChange?.(true)
     await window.clearpilot.enterFocusMode()
   }
@@ -363,7 +305,6 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
   async function exitFocusMode() {
     await window.clearpilot.exitFocusMode()
     onFocusModeChange?.(false)
-    setFocusSource(null)
   }
 
   return (
@@ -423,29 +364,27 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
           listenError={listenError}
           onStartListening={startListening}
           onStopListening={stopListening}
-          onFocusMode={() => enterFocusMode('copilot')}
+          onFocusMode={enterFocusMode}
         />
       </div>
-      <div className={!focusMode && activeTab === 'judge' ? 'contents' : 'hidden'}>
-        <JudgeTab
+      <div className={!focusMode && activeTab === 'prompter' ? 'contents' : 'hidden'}>
+        <PrompterTab
           listenMode={listenMode}
           listenError={listenError}
           onStartListening={startListening}
           onStopListening={stopListening}
           speakerLevel={audioCapture.speakerLevel}
           speakerDeviceName={audioCapture.speakerDeviceName}
-          micLevel={audioCapture.micLevel}
-          micDeviceName={audioCapture.micDeviceName}
-          jobCurrent={jobCurrent}
-          jobRounds={jobRounds}
+          aiResponse={aiResponse}
+          partnerTranscript={partnerTranscript}
           guestConnected={guestConnected}
-          onFocusMode={() => enterFocusMode('judge')}
         />
       </div>
 
+      {/* Focus Mode is Copilot-only now - the Prompter tab has no entry point into it (see
+          PrompterTab.jsx), so focusSource is always 'copilot' whenever focusMode is true. */}
       {focusMode && (
         <FocusWidget
-          source={focusSource}
           onExit={exitFocusMode}
           listenMode={listenMode}
           listenError={listenError}
@@ -458,13 +397,22 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
           streaming={streaming}
           history={history}
           speakerTranscript={speakerTranscript}
-          jobCurrent={jobCurrent}
-          jobRounds={jobRounds}
-          pinnedRoundIds={pinnedRoundIds}
-          onToggleRoundPin={toggleRoundPin}
-          guestConnected={guestConnected}
         />
       )}
     </div>
   )
 }
+
+/* UPDATES LOG
+ * 2026-07-20 - Merged Job Mode ('both') and Practice Partner ('partner') listen modes into
+ *   a single 'prompter' mode, and removed the AI judge entirely: jobCurrentRef/jobCurrent/
+ *   jobRounds/roundIdRef/pinnedRoundIds/toggleRoundPin/pendingMicFeedbackRef/
+ *   finalizeMicRound are all gone, replaced by two independent, judge-free state slots -
+ *   aiResponse (Speaker session's question+answer, was jobCurrent.suggestion in 'both' mode)
+ *   and partnerTranscript (the web relay, was jobCurrent.suggestion in 'partner' mode) - both
+ *   now render simultaneously instead of being mutually exclusive. stopListening saves a
+ *   Prompter session to History (see savePrompterSession) instead of finalizeMicRound doing
+ *   it per-round. JudgeTab -> PrompterTab, tab key/label 'judge'/'Job Mode' -> 'prompter'/
+ *   'Prompter'. Focus Mode is Copilot-only now (removed the Prompter tab's entry point and
+ *   the now-dead focusSource state/source param, since there's only ever one source left).
+ */

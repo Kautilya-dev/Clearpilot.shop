@@ -1,3 +1,15 @@
+"""ABOUT THIS FILE
+Lists, saves, and deletes an interview's HistoryEntry rows (Copilot Q&A + Prompter
+sessions). Linked from:
+- apps/web/pages/interview.html: GET here to render the Copilot tab's conversation replay
+  and the Prompter tab's "Prompter History" view (filtered client-side by the
+  PRACTICE_QUESTION_PREFIX-prefixed question text POST'd below).
+- apps/web/routers/chat.py: writes Copilot Q&A rows directly via HistoryEntry, doesn't call
+  this module's POST endpoint.
+- apps/desktop/src/main/api-client.js's savePrompterSession(): the Desktop app's Prompter
+  tab POSTs here once a session stops, so a session started from either the web Prompter tab
+  or the Desktop app's Prompter tab ends up in the same reviewable history.
+"""
 import json
 from datetime import datetime, timezone
 from uuid import UUID
@@ -51,29 +63,33 @@ async def list_history(
     return [_to_response(e) for e in result]
 
 
-class SavePracticeRoundRequest(BaseModel):
-    partner_answer: str
-    your_response: str
-    coach_feedback: str
+class SavePrompterSessionRequest(BaseModel):
+    web_transcript: str = ""
+    ai_response: str = ""
 
 
-# Job Mode rounds (AI-suggested or practice-partner) aren't persisted anywhere else - unlike
-# Copilot chat, which /chat/ask writes to HistoryEntry itself server-side, nothing calls this
-# for the normal AI-vs-candidate flow. This is deliberately scoped to practice-partner rounds
-# only, called by the Desktop app once a round with a real partner (not the AI) completes.
+# Prompter sessions (Desktop's Prompter tab, or a partner speaking into the web Prompter tab
+# relayed there) aren't persisted anywhere else - unlike Copilot chat, which /chat/ask writes
+# to HistoryEntry itself server-side, nothing calls this for that flow. Called by the Desktop
+# app once a Prompter session stops (see api-client.js's savePrompterSession). Either field
+# can be empty - e.g. the AI Generated Response panel was disabled the whole session, or no
+# partner ever connected - only sections with real content are included in the saved answer.
+# The "Practice session with partner" question prefix is unchanged from the pre-refactor
+# schema so apps/web/pages/interview.html's Prompter History filter still matches these rows.
 @router.post("/interviews/{interview_id}/history", response_model=HistoryEntryResponse)
-async def save_practice_round(
-    body: SavePracticeRoundRequest,
+async def save_prompter_session(
+    body: SavePrompterSessionRequest,
     interview: Interview = Depends(get_owned_interview),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     question = f"Practice session with partner — {datetime.now(timezone.utc).isoformat()}"
-    answer = (
-        f"**Partner's spoken answer:**\n{body.partner_answer}\n\n"
-        f"**Your response:**\n{body.your_response}\n\n"
-        f"**Coach feedback:**\n{body.coach_feedback}"
-    )
+    sections = []
+    if body.web_transcript.strip():
+        sections.append(f"**Web Prompter transcription:**\n{body.web_transcript.strip()}")
+    if body.ai_response.strip():
+        sections.append(f"**AI generated response:**\n{body.ai_response.strip()}")
+    answer = "\n\n".join(sections) or "(No transcription or AI response was captured for this session.)"
     entry = HistoryEntry(user_id=current_user.id, interview_id=interview.id, question=question, answer=answer, sources="[]")
     db.add(entry)
     await db.commit()
@@ -98,3 +114,12 @@ async def clear_history(interview: Interview = Depends(get_owned_interview), db:
     for entry in result:
         await db.delete(entry)
     await db.commit()
+
+
+# UPDATES LOG
+# 2026-07-20 - Renamed SavePracticeRoundRequest -> SavePrompterSessionRequest and
+#   save_practice_round -> save_prompter_session; fields changed from {partner_answer,
+#   your_response, coach_feedback} to {web_transcript, ai_response} - the AI judge (mic
+#   listening + comparison feedback) was removed from the Desktop app's Prompter tab
+#   entirely, so there's no more candidate response or coach feedback to save, just the two
+#   independent live panels (Web Prompter Transcription relay + AI Generated Response).

@@ -1,6 +1,12 @@
-// All HTTP calls to the ClearPilot web backend live here, in the main process - never in
-// the renderer - so the bearer token never has to be readable by renderer JS. See
-// src/main/auth-store.js for where the token itself is cached/persisted.
+/* ABOUT THIS FILE
+ * All HTTP calls to the ClearPilot web backend live here, in the main process - never in
+ * the renderer - so the bearer token never has to be readable by renderer JS. See
+ * src/main/auth-store.js for where the token itself is cached/persisted.
+ *
+ * Linked from: src/main/index.js (imports this whole module and calls nearly every
+ * function here from its IPC handlers - auth, interviews, materials, Q&A, history,
+ * Prompter sessions, and the auto-update version check/download).
+ */
 
 const BASE_URL = process.env.CLEARPILOT_API_BASE_URL || 'https://clearpilot.shop'
 
@@ -259,14 +265,36 @@ async function deleteQa(token, interviewId, entryId) {
   if (!res.ok) throw new Error(await parseErrorDetail(res))
 }
 
-async function savePracticeHistoryEntry(token, interviewId, { partnerAnswer, yourResponse, coachFeedback }) {
+// Saves one Prompter session to the shared History (see apps/web/routers/history.py) - the
+// same feed the web app's Prompter History view reads from, so a session started from either
+// side shows up in one place. webTranscript is whatever arrived over the practice relay from
+// the web app's Prompter tab; aiResponse is what the desktop's own Speaker session generated
+// listening to system audio. Either can be empty (e.g. the AI panel was disabled the whole
+// session) - the backend only includes whichever sections have content.
+async function savePrompterSession(token, interviewId, { webTranscript, aiResponse }) {
   const res = await fetch(`${BASE_URL}/api/interviews/${interviewId}/history`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ partner_answer: partnerAnswer, your_response: yourResponse, coach_feedback: coachFeedback })
+    body: JSON.stringify({ web_transcript: webTranscript, ai_response: aiResponse })
   })
   if (!res.ok) throw new Error(await parseErrorDetail(res))
   return res.json()
+}
+
+// Auto-update: reuses the same presigned-download infrastructure as the website's "Download"
+// page (apps/web/routers/downloads.py) rather than a dedicated update-file host - simpler and
+// lower-risk than wiring up a separate public bucket/manifest just for this. latest-version.txt
+// is a tiny public-readable marker uploaded to the same bucket alongside each release.
+async function fetchLatestVersion() {
+  const res = await fetch(`${BASE_URL}/download/latest-version`)
+  if (!res.ok) throw new Error(await parseErrorDetail(res))
+  return res.json() // { version }
+}
+
+async function downloadInstaller() {
+  const res = await fetch(`${BASE_URL}/download/windows`, { redirect: 'follow' })
+  if (!res.ok) throw new Error(await parseErrorDetail(res))
+  return Buffer.from(await res.arrayBuffer())
 }
 
 async function mintRealtimeToken(token, interviewId, source) {
@@ -341,5 +369,15 @@ module.exports = {
   updateQa,
   deleteQa,
   mintRealtimeToken,
-  savePracticeHistoryEntry
+  savePrompterSession,
+  fetchLatestVersion,
+  downloadInstaller
 }
+
+/* UPDATES LOG
+ * 2026-07-20 - Renamed savePracticeHistoryEntry -> savePrompterSession and changed its body
+ *   shape from {partner_answer, your_response, coach_feedback} to {web_transcript,
+ *   ai_response} - part of removing Job Mode's AI judge entirely (candidate's mic response
+ *   is no longer captured or compared against anything). Added fetchLatestVersion and
+ *   downloadInstaller for the new Settings -> Update tab auto-update feature.
+ */
