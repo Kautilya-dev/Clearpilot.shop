@@ -1000,7 +1000,14 @@
   function appendPrompterLine(text) {
     const transcriptEl = document.getElementById('prompter-transcript');
     transcriptEl.querySelector('.text-center')?.remove();
-    if (prompterLastFinalEl && prompterLastFinalText && text.startsWith(prompterLastFinalText) && text !== prompterLastFinalText) {
+    // Excluding the exact-duplicate case (text === prompterLastFinalText) here was the
+    // bug in the first fix attempt: the recognition engine doesn't just re-fire GROWING
+    // prefixes as final, it frequently re-fires the exact SAME final text verbatim
+    // multiple times in a row too - excluding that case routed every one of those
+    // duplicates into the "create a new line" branch instead of being absorbed as a
+    // no-op update, which is exactly what produced repeated identical lines
+    // ("hi my name is Krishna" x5) before the genuinely new words appeared.
+    if (prompterLastFinalEl && prompterLastFinalText && text.startsWith(prompterLastFinalText)) {
       prompterLastFinalEl.textContent = text;
     } else {
       const p = document.createElement('p');
