@@ -576,25 +576,35 @@ function registerIpcHandlers() {
     return `${mode} ${length}`
   }
 
+  // Realtime voice models default to mirroring whatever language they hear, unlike the
+  // web app's text-only chat completions - so this needs to be stated explicitly here too
+  // (matches apps/web/services/rag_service.py's SYSTEM_PROMPT_TEMPLATE rule 8) or a
+  // question asked in Hindi/Telugu/etc. gets answered/coached in that same language.
+  const ENGLISH_ONLY_INSTRUCTION =
+    'Always respond in English only, regardless of what language you hear the interviewer, the candidate, or the practice partner speak in - never switch languages to match them.'
+
   function buildSapInstructions(answerFormatMode, answerLength) {
     return (
       'You are an expert SAP CPI (Cloud Integration) interview assistant. ' +
       "Listen to the interviewer's question and respond with a clear, accurate answer. " +
       'Focus on SAP Integration Suite, CPI iFlows, adapters, mappings, security, and best practices. ' +
       'Whenever you **bold** a key term, immediately follow it with a short concrete example or plain-language explanation of what it means in practice, so the candidate could explain it unprompted if the interviewer digs in. ' +
+      `${ENGLISH_ONLY_INSTRUCTION} ` +
       buildAnswerTemplateInstruction(answerFormatMode, answerLength)
     )
   }
 
   const JUDGE_INITIAL_INSTRUCTIONS =
     'You are an interview coach in Job Mode. Listen to what the candidate says. ' +
-    'When they finish speaking, give 2-3 sentences of feedback: what they said well and one specific thing to improve.'
+    'When they finish speaking, give 2-3 sentences of feedback: what they said well and one specific thing to improve. ' +
+    ENGLISH_ONLY_INSTRUCTION
 
   function judgeInstructionsWithSuggestion(suggestion) {
     return (
       `You are an interview coach. The ideal answer to the interviewer's question was: "${suggestion}". ` +
       "Now listen to what the candidate actually says. When they finish, give 2-3 sentences of feedback: " +
-      'what they said well compared to the ideal answer, and one specific thing to improve.'
+      'what they said well compared to the ideal answer, and one specific thing to improve. ' +
+      ENGLISH_ONLY_INSTRUCTION
     )
   }
 
