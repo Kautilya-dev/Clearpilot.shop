@@ -2,8 +2,9 @@
 Lists, saves, and deletes an interview's HistoryEntry rows (Copilot Q&A + Prompter
 sessions). Linked from:
 - apps/web/pages/interview.html: GET here to render the Copilot tab's conversation replay
-  and the Prompter tab's "Prompter History" view (filtered client-side by the
-  PRACTICE_QUESTION_PREFIX-prefixed question text POST'd below).
+  (filtered client-side to exclude PRACTICE_QUESTION_PREFIX-prefixed rows) and the Prompter
+  tab's "History" sub-view, which browses those same excluded rows - admin-only, gated by
+  is_admin via that page's initPrompterHistoryVisibility() (normal users only see Live).
 - apps/web/routers/chat.py: writes Copilot Q&A rows directly via HistoryEntry, doesn't call
   this module's POST endpoint.
 - apps/desktop/src/main/api-client.js's savePrompterSession(): the Desktop app's Prompter
@@ -117,6 +118,14 @@ async def clear_history(interview: Interview = Depends(get_owned_interview), db:
 
 
 # UPDATES LOG
+# 2026-07-20 - apps/web/pages/interview.html's Prompter tab "Live / History" toggle and its
+#   History panel were removed (user asked to hide Prompter History from users) - this
+#   module's endpoints are unchanged, saved practice-partner rows just aren't browsable from
+#   the web UI anymore.
+# 2026-07-20 (later same day) - That removal was corrected to an admin-only gate instead
+#   (is_admin, via that page's initPrompterHistoryVisibility()) - the request was to hide
+#   Prompter History from NORMAL users specifically, not remove it for admins too. This
+#   module's endpoints are still unchanged either way.
 # 2026-07-20 - Renamed SavePracticeRoundRequest -> SavePrompterSessionRequest and
 #   save_practice_round -> save_prompter_session; fields changed from {partner_answer,
 #   your_response, coach_feedback} to {web_transcript, ai_response} - the AI judge (mic

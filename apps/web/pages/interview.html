@@ -1,3 +1,16 @@
+<!-- ABOUT THIS FILE
+The per-interview workspace page: Materials / Q&A / Copilot / Prompter tabs for a single
+interview, served at /interviews/{id}. Rendered by FastAPI as a static page (no build step) -
+all interactivity is vanilla JS in the trailing script block. Talks to the backend via
+apps/web/routers/{interviews,materials,qa,chat,history,practice}.py. The Copilot tab replays
+past Q&A via GET /interviews/{id}/history (apps/web/routers/history.py), filtered client-side
+to exclude Prompter/practice-partner rows by their PRACTICE_QUESTION_PREFIX. The Prompter tab
+uses the Web Speech API to transcribe a practice partner's spoken answer live and relay it to
+the candidate's Desktop app over a WebSocket (apps/web/routers/practice.py, Redis Pub/Sub).
+The Prompter tab's History sub-view (past practice-partner sessions) is admin-only - normal
+users only ever see Live, gated via initPrompterHistoryVisibility()/fetchCurrentUser() (the
+latter defined in app.js, already loaded on this page).
+-->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -136,7 +149,9 @@
 
       <!-- Prompter -->
       <div id="panel-prompter" class="h-full overflow-hidden flex flex-col hidden">
-        <div class="border-b border-gray-100 px-4 md:px-8 pt-3 flex items-center gap-1 shrink-0">
+        <!-- The History tab is admin-only (see initPrompterHistoryVisibility) - normal users
+             only ever see Live, so this bar starts hidden and is only unhidden for admins. -->
+        <div id="prompter-view-toggle" class="border-b border-gray-100 px-4 md:px-8 pt-3 flex items-center gap-1 shrink-0 hidden">
           <button type="button" data-prompter-view="live" class="prompter-view-btn text-xs font-medium px-3 py-1.5 rounded-lg">Live</button>
           <button type="button" data-prompter-view="history" class="prompter-view-btn text-xs font-medium px-3 py-1.5 rounded-lg">History</button>
         </div>
@@ -147,8 +162,8 @@
             </div>
             <p class="font-medium mb-1">Speak the answer for your practice partner</p>
             <p class="text-sm text-gray-500 max-w-sm mx-auto">
-              Have your partner start Job Mode on their Desktop app, then hit Start below and speak
-              the answer out loud — it streams to them live as a suggested answer to judge against.
+              Have your partner start Prompter on their Desktop app, then hit Start below and speak
+              the answer out loud — it streams to them live in the Web Prompter Transcription panel.
             </p>
           </div>
         </div>
@@ -912,7 +927,7 @@
   let practiceSocket = null;
   let practiceConnected = false;
 
-  // ---------- Prompter: Live / History toggle ----------
+  // ---------- Prompter: Live / History toggle (admin-only - see initPrompterHistoryVisibility) ----------
   function switchPrompterView(view) {
     document.getElementById('prompter-transcript').classList.toggle('hidden', view !== 'live');
     document.getElementById('prompter-history').classList.toggle('hidden', view !== 'history');
@@ -956,6 +971,18 @@
       })
       .join('');
   }
+
+  // Prompter History is admin-only - normal users only see the Live transcript view. Relies
+  // on app.js's fetchCurrentUser() (already loaded on this page via the shared script tag),
+  // which itself distinguishes a real "not logged in" from a transient check failure - see
+  // its own comment for why this must not force a logout on undefined.
+  async function initPrompterHistoryVisibility() {
+    const user = await fetchCurrentUser();
+    if (user && user.is_admin) {
+      document.getElementById('prompter-view-toggle').classList.remove('hidden');
+    }
+  }
+  initPrompterHistoryVisibility();
 
   // Relays each finalized phrase to the candidate's Desktop app via the backend's Redis-
   // Pub/Sub relay (apps/web/routers/practice.py) - keyed by interview_id, no join code
@@ -1117,3 +1144,17 @@
 </script>
 </body>
 </html>
+<!-- UPDATES LOG
+2026-07-20 - Removed the Prompter tab's "Live / History" toggle, the prompter-history panel,
+  and loadPrompterHistory() - past practice-partner sessions are no longer browsable from the
+  web UI (per user request to hide Prompter History from users). The backend GET/POST
+  /interviews/{id}/history endpoints (history.py) are unchanged - Copilot's own history replay
+  still uses GET, and the Desktop app's Prompter tab still POSTs sessions there; only this
+  page's UI for browsing those saved rows was removed.
+2026-07-20 (later same day) - Restored the toggle/panel/functions above, but gated behind
+  admin status (initPrompterHistoryVisibility, using app.js's fetchCurrentUser()) instead of
+  removed outright - the request was to hide Prompter History from NORMAL users specifically,
+  not to remove it for everyone including admins. #prompter-view-toggle starts hidden in the
+  HTML and is only unhidden once the async admin check resolves true.
+-->
+
