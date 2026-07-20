@@ -684,19 +684,18 @@ function registerIpcHandlers() {
     const sapInstructions = buildSapInstructions(user?.answer_format_mode || 'bullets', user?.answer_length || 'medium')
 
     if (source === 'prompter') {
-      // Prompter tab: the Speaker session transcribes the interviewer's question and
-      // generates the AI Generated Response panel's suggested answer - no mic session,
-      // no AI judge/comparison of anything the candidate says (removed entirely). The
-      // Web Prompter Transcription panel connects independently via the practice relay
-      // below, regardless of whether the AI Generated Response panel is enabled
-      // client-side - that's a display-only toggle in the renderer, not a session gate.
-      const sr = await startSingleSession(interviewId, 'speaker', sapInstructions)
-      if (!sr.success) return sr
-      if (token) connectPracticeRelay(interviewId, token)
+      // Prompter tab's base session - just the Web Prompter Transcription relay. Needs no
+      // OpenAI key at all, and must not depend on the Speaker session succeeding - the
+      // renderer starts/stops that independently via source: 'speaker' below (same channel
+      // Copilot's own standalone Speaker mode uses) so the AI Generated Response panel can
+      // be genuinely enabled/disabled (not just hidden) without ever blocking the relay.
+      if (!token) return { success: false, error: 'Not signed in' }
+      connectPracticeRelay(interviewId, token)
       return { success: true }
     }
-    // Copilot mode (single device): Speaker and Mic are alternative ways to ASK the same
-    // Copilot a question and get a real SAP CPI answer.
+    // Copilot mode (single device) and the Prompter tab's AI Generated Response panel both
+    // land here for source 'speaker'/'mic' - which one a given session's events are routed
+    // to is decided client-side by the renderer's current listenMode, not here.
     return startSingleSession(interviewId, source, sapInstructions)
   }
 
@@ -705,7 +704,11 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle('listening:stop', async (event, { source }) => {
-    if (source === 'speaker' || source === 'prompter') {
+    // 'prompter' only ever controls the relay now - it must NOT also stop 'speaker' here,
+    // or the AI Generated Response panel's independent enable/disable (which stops/starts
+    // 'speaker' on its own, see InterviewWorkspace.jsx) and the Prompter tab's own Stop
+    // button would fight over the same speakerSession.
+    if (source === 'speaker') {
       speakerStopIntentional = true
       speakerSession?.disconnect()
       speakerSession = null
@@ -802,4 +805,11 @@ if (!gotLock) {
  *   candidate's spoken response. Renamed practice:saveRound -> practice:saveSession with a
  *   {webTranscript, aiResponse} shape (was {partnerAnswer, yourResponse, coachFeedback}).
  *   Added update:check / update:apply IPC handlers for the new Settings -> Update tab.
+ * 2026-07-20 (later same day) - Split source 'prompter' apart from source 'speaker': the
+ *   relay (Web Prompter Transcription) no longer waits on startSingleSession(..., 'speaker',
+ *   ...) succeeding first - a missing/failing OpenAI key was silently preventing the relay
+ *   from ever connecting. listening:stop's 'prompter' branch no longer also tears down
+ *   speakerSession - the renderer now stops 'speaker' explicitly and independently when the
+ *   AI Generated Response panel is disabled, instead of it staying connected underneath a
+ *   hidden panel.
  */

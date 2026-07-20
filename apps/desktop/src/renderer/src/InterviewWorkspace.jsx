@@ -70,6 +70,13 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
   // ever active at a time).
   const partnerTranscriptRef = useRef('')
   const [partnerTranscript, setPartnerTranscript] = useState('')
+  // Whether the AI Generated Response panel is enabled - lifted here (not local to
+  // PrompterTab) because toggling it must actually start/stop the underlying Speaker
+  // session (see toggleAiResponse below), not just hide the panel - the Prompter tab's own
+  // Start/Stop button only ever controls the relay (Web Prompter Transcription), so this is
+  // the only thing that starts/stops the Speaker session while Prompter is active.
+  const aiEnabledRef = useRef(true)
+  const [aiEnabled, setAiEnabledState] = useState(true)
 
   // Load past conversation so the user can continue exactly where they left off - re-runs
   // every time the Copilot tab itself is opened (not just on first mount), so a question
@@ -240,9 +247,25 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
 
   async function startListening(source) {
     setListenError('')
-    // Capture audio first so device names appear immediately, independent of WS connect time.
-    // 'prompter' only ever needs Speaker capture - no mic session starts for it anymore.
-    if (source === 'speaker' || source === 'prompter') {
+    if (source === 'prompter') {
+      // Base Prompter session - just the relay (Web Prompter Transcription). No audio
+      // capture needed for that at all; the AI Generated Response panel is a separate
+      // session started right after, only if currently enabled, so its own failure (e.g.
+      // no OpenAI key set) can't prevent the relay itself from connecting.
+      listenModeRef.current = 'prompter'
+      setListenMode('prompter')
+      const res = await window.clearpilot.startListening(interview.id, 'prompter')
+      if (!res.success) {
+        setListenError(res.error)
+        listenModeRef.current = 'off'
+        setListenMode('off')
+        return
+      }
+      if (aiEnabledRef.current) await startAiResponse()
+      return
+    }
+    // Copilot mode: Speaker and Mic are alternative ways to ASK the same Copilot a question.
+    if (source === 'speaker') {
       const captureRes = await audioCapture.startSpeakerCapture()
       if (!captureRes.success) { setListenError(captureRes.message); return }
     } else if (source === 'mic') {
@@ -255,10 +278,45 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
     if (!res.success) setListenError(res.error)
   }
 
+  // AI Generated Response panel's own start/stop - independent of the Prompter tab's
+  // Start/Stop button, which only ever controls the relay. Reuses the same 'speaker' IPC
+  // channel Copilot's standalone Speaker mode uses; onListeningQuestion/onListeningAnswer
+  // above route its events to aiResponse instead of Copilot history based on
+  // listenModeRef.current being 'prompter' at the moment each event arrives, regardless of
+  // which function started the underlying session.
+  async function startAiResponse() {
+    const captureRes = await audioCapture.startSpeakerCapture()
+    if (!captureRes.success) { setListenError(captureRes.message); return }
+    const res = await window.clearpilot.startListening(interview.id, 'speaker')
+    if (!res.success) {
+      setListenError(res.error)
+      audioCapture.stopSpeakerCapture()
+    }
+  }
+
+  async function stopAiResponse() {
+    await window.clearpilot.stopListening('speaker')
+    audioCapture.stopSpeakerCapture()
+  }
+
+  // Called when the AI Generated Response checkbox changes (see PrompterTab.jsx). Only
+  // actually starts/stops the Speaker session while Prompter is running - if it isn't yet,
+  // this just remembers the preference for the next time Start Prompter is clicked.
+  async function toggleAiResponse(enabled) {
+    aiEnabledRef.current = enabled
+    setAiEnabledState(enabled)
+    if (listenModeRef.current !== 'prompter') return
+    if (enabled) await startAiResponse()
+    else await stopAiResponse()
+  }
+
   async function stopListening() {
     const mode = listenModeRef.current
-    if (mode === 'speaker' || mode === 'prompter') {
-      await window.clearpilot.stopListening(mode)
+    if (mode === 'prompter') {
+      await window.clearpilot.stopListening('prompter')
+      await stopAiResponse() // no-op if the AI panel wasn't running
+    } else if (mode === 'speaker') {
+      await window.clearpilot.stopListening('speaker')
       audioCapture.stopSpeakerCapture()
     } else if (mode === 'mic') {
       await window.clearpilot.stopListening('mic')
@@ -285,6 +343,7 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
     return () => {
       window.clearpilot.stopListening('speaker')
       window.clearpilot.stopListening('mic')
+      window.clearpilot.stopListening('prompter')
       audioCapture.stopSpeakerCapture()
       audioCapture.stopMicCapture()
     }
@@ -376,6 +435,8 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
           speakerLevel={audioCapture.speakerLevel}
           speakerDeviceName={audioCapture.speakerDeviceName}
           aiResponse={aiResponse}
+          aiEnabled={aiEnabled}
+          onToggleAiResponse={toggleAiResponse}
           partnerTranscript={partnerTranscript}
           guestConnected={guestConnected}
         />
@@ -415,4 +476,14 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
  *   it per-round. JudgeTab -> PrompterTab, tab key/label 'judge'/'Job Mode' -> 'prompter'/
  *   'Prompter'. Focus Mode is Copilot-only now (removed the Prompter tab's entry point and
  *   the now-dead focusSource state/source param, since there's only ever one source left).
+ * 2026-07-20 (later same day) - Fixed two bugs found live: starting Prompter previously
+ *   started the Speaker session FIRST and only connected the relay if that succeeded, so a
+ *   missing/failing OpenAI key silently broke the Web Prompter Transcription panel too, and
+ *   there was no way to actually stop the Speaker session independently of the whole
+ *   Prompter session, so disabling the AI panel never stopped listening. Split them fully:
+ *   startListening('prompter') now only connects the relay (via IPC source 'prompter', which
+ *   the main process no longer bundles with the speaker session - see main/index.js's same-day
+ *   entry); the AI panel's own start/stop (startAiResponse/stopAiResponse/toggleAiResponse,
+ *   lifted aiEnabled/aiEnabledRef state) independently controls the Speaker session via the
+ *   existing 'speaker' IPC channel, whether or not Prompter's relay is connected.
  */

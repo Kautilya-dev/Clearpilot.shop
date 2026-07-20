@@ -1,12 +1,15 @@
 /* ABOUT THIS FILE
  * The desktop app's unified "Prompter" tab - replaces JudgeTab.jsx (Job Mode + Practice
- * Partner, merged into one). A single Start/Stop Prompter button starts two independent,
- * simultaneous things: the Speaker Realtime session (system audio -> AI Generated Response
- * panel) and the Practice Partner relay (the web app's Prompter tab -> Web Prompter
- * Transcription panel). No AI judge, no mic listening, no comparison of anything the
+ * Partner, merged into one). The Start/Stop Prompter button controls only the relay (Web
+ * Prompter Transcription); the AI Generated Response checkbox independently starts/stops
+ * the Speaker Realtime session (system audio -> suggested answer) - genuinely, not just a
+ * display toggle, so disabling it actually stops listening and a missing/failing OpenAI key
+ * can never block the relay. No AI judge, no mic listening, no comparison of anything the
  * candidate says - that entire feature was removed. Rendered by InterviewWorkspace.jsx,
- * which owns and passes down all the state here (listenMode, aiResponse, partnerTranscript,
- * guestConnected) plus the start/stop handlers.
+ * which owns and passes down all the state here (listenMode, aiResponse, aiEnabled,
+ * partnerTranscript, guestConnected) plus the start/stop/toggle handlers - aiEnabled is a
+ * controlled prop, not local state, because InterviewWorkspace needs to know its value to
+ * decide whether to start the Speaker session when Prompter itself starts.
  */
 import { useState, useRef, useEffect } from 'react'
 import { marked } from 'marked'
@@ -35,14 +38,12 @@ export default function PrompterTab({
   speakerLevel,
   speakerDeviceName,
   aiResponse,
+  aiEnabled,
+  onToggleAiResponse,
   partnerTranscript,
   guestConnected
 }) {
   const active = listenMode === 'prompter'
-  // Enable/disable is purely a display toggle in this component - the underlying Speaker
-  // session (which generates aiResponse) keeps running either way once Prompter is started,
-  // so re-enabling instantly shows whatever accumulated while it was hidden, no restart needed.
-  const [aiEnabled, setAiEnabled] = useState(true)
   const [splitPct, setSplitPct] = useState(DEFAULT_SPLIT_PCT) // Web Prompter panel's width %
   const [isDragging, setIsDragging] = useState(false)
   const containerRef = useRef(null)
@@ -88,7 +89,7 @@ export default function PrompterTab({
             <input
               type="checkbox"
               checked={aiEnabled}
-              onChange={(e) => setAiEnabled(e.target.checked)}
+              onChange={(e) => onToggleAiResponse(e.target.checked)}
               className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
             />
             AI Generated Response
@@ -157,11 +158,11 @@ export default function PrompterTab({
                 <p className="text-xs font-semibold text-gray-700">AI Generated Response</p>
                 <button
                   type="button"
-                  onClick={() => setAiEnabled(false)}
-                  title="Hide this panel"
+                  onClick={() => onToggleAiResponse(false)}
+                  title="Disable - stops listening to system audio, not just hides the panel"
                   className="text-gray-400 hover:text-gray-600 text-xs"
                 >
-                  Hide
+                  Disable
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto px-4 py-3 min-h-0 space-y-3">
@@ -188,7 +189,7 @@ export default function PrompterTab({
         {!aiEnabled && (
           <button
             type="button"
-            onClick={() => setAiEnabled(true)}
+            onClick={() => onToggleAiResponse(true)}
             className="absolute right-2 top-2 text-xs px-2 py-1 rounded-lg border border-gray-200 text-gray-500 hover:border-purple-300 hover:text-purple-600 bg-white shadow-sm"
           >
             Show AI Response
@@ -208,4 +209,10 @@ export default function PrompterTab({
  *   simultaneous panels - Web Prompter Transcription and AI Generated Response - in a
  *   resizable split (drag the divider) with an explicit enable/disable checkbox for the AI
  *   panel. No Focus Mode entry point (Focus Mode is Copilot-only now).
+ * 2026-07-20 - Fixed two real bugs found live: (1) disabling the AI panel didn't actually
+ *   stop listening to system audio, just hid the display - aiEnabled is now a controlled
+ *   prop InterviewWorkspace uses to genuinely start/stop the Speaker session; (2) starting
+ *   Prompter could fail to fetch the Web Prompter Transcript at all if the Speaker session
+ *   failed first (e.g. no OpenAI key set) - the relay and the AI session are now fully
+ *   independent, so one's failure never blocks the other.
  */
