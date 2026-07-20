@@ -767,29 +767,32 @@ function registerIpcHandlers() {
       fs.writeFileSync(tempPath, installerBuffer)
 
       // NSIS can't overwrite this app's own running .exe/.asar files. Spawning the
-      // installer immediately and quitting 800ms later (the previous version of this
-      // handler) was a race: app.quit() only STARTS an async shutdown, it doesn't
-      // guarantee the process - and its file locks - is actually gone by the time the
-      // installer runs, so the install could silently fail to overwrite anything.
-      // Confirmed live: the update downloaded but didn't reinstall. A companion batch
-      // script polls tasklist for THIS process's own PID to genuinely disappear before
-      // launching the installer, then deletes itself.
+      // installer immediately and quitting 800ms later (the first version of this handler)
+      // was a race: app.quit() only STARTS an async shutdown, it doesn't guarantee the
+      // process - and its file locks - is actually gone by the time the installer runs, so
+      // the install could silently fail to overwrite anything. A companion script polls for
+      // THIS process's own PID to genuinely disappear before launching the installer, then
+      // deletes itself. The FIRST attempt at that companion script used cmd.exe piping
+      // tasklist | find - confirmed live that this pops up a visible black console window
+      // ("find "<pid>"") during reinstall, because each console-mode executable in a piped
+      // batch chain can allocate its own window when spawned detached, regardless of
+      // windowsHide on the outer process. PowerShell's own Get-Process cmdlet runs
+      // in-process (no nested console-allocating subprocess per poll), so -WindowStyle
+      // Hidden here actually holds for the whole wait, not just the immediate child.
       const pid = process.pid
-      const scriptPath = path.join(app.getPath('temp'), 'clearpilot-update.bat')
+      const scriptPath = path.join(app.getPath('temp'), 'clearpilot-update.ps1')
       const script = [
-        '@echo off',
-        ':wait',
-        `tasklist /FI "PID eq ${pid}" 2>NUL | find "${pid}" >NUL`,
-        'if not errorlevel 1 (',
-        '  timeout /t 1 /nobreak >NUL',
-        '  goto wait',
-        ')',
-        `start "" "${tempPath}" /S`,
-        'del "%~f0"'
+        `while (Get-Process -Id ${pid} -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 1 }`,
+        `Start-Process -FilePath "${tempPath}" -ArgumentList '/S'`,
+        'Remove-Item -Path "$PSCommandPath" -Force'
       ].join('\r\n')
       fs.writeFileSync(scriptPath, script)
 
-      spawn('cmd.exe', ['/c', scriptPath], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
+      spawn(
+        'powershell.exe',
+        ['-WindowStyle', 'Hidden', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath],
+        { detached: true, stdio: 'ignore', windowsHide: true }
+      ).unref()
       app.quit()
       return { success: true }
     } catch (error) {
@@ -843,4 +846,11 @@ if (!gotLock) {
  *   Now spawns a companion batch script that polls tasklist for this process's own PID to
  *   genuinely disappear before launching the installer (verified this polling logic
  *   in isolation against a dummy process before shipping it), then self-deletes.
+ * 2026-07-20 (later same day) - Confirmed live: that batch script's `tasklist | find` pipe
+ *   popped up a visible black console window ("find "<pid>"") during reinstall - each
+ *   console-mode executable in a piped cmd.exe chain can allocate its own window when
+ *   spawned detached, regardless of windowsHide on the outer process. Replaced with a
+ *   PowerShell script (Get-Process/Start-Sleep run in-process, no nested console-allocating
+ *   subprocess per poll) launched via -WindowStyle Hidden, which actually holds for the
+ *   whole wait. Same polling behavior, re-verified in isolation against a dummy process.
  */
