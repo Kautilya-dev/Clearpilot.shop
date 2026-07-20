@@ -765,8 +765,32 @@ function registerIpcHandlers() {
       const installerBuffer = await apiClient.downloadInstaller()
       const tempPath = path.join(app.getPath('temp'), 'ClearPilot-Update.exe')
       fs.writeFileSync(tempPath, installerBuffer)
-      spawn(tempPath, ['/S'], { detached: true, stdio: 'ignore' }).unref()
-      setTimeout(() => app.quit(), 800)
+
+      // NSIS can't overwrite this app's own running .exe/.asar files. Spawning the
+      // installer immediately and quitting 800ms later (the previous version of this
+      // handler) was a race: app.quit() only STARTS an async shutdown, it doesn't
+      // guarantee the process - and its file locks - is actually gone by the time the
+      // installer runs, so the install could silently fail to overwrite anything.
+      // Confirmed live: the update downloaded but didn't reinstall. A companion batch
+      // script polls tasklist for THIS process's own PID to genuinely disappear before
+      // launching the installer, then deletes itself.
+      const pid = process.pid
+      const scriptPath = path.join(app.getPath('temp'), 'clearpilot-update.bat')
+      const script = [
+        '@echo off',
+        ':wait',
+        `tasklist /FI "PID eq ${pid}" 2>NUL | find "${pid}" >NUL`,
+        'if not errorlevel 1 (',
+        '  timeout /t 1 /nobreak >NUL',
+        '  goto wait',
+        ')',
+        `start "" "${tempPath}" /S`,
+        'del "%~f0"'
+      ].join('\r\n')
+      fs.writeFileSync(scriptPath, script)
+
+      spawn('cmd.exe', ['/c', scriptPath], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
+      app.quit()
       return { success: true }
     } catch (error) {
       return { success: false, error: error.message }
@@ -812,4 +836,11 @@ if (!gotLock) {
  *   speakerSession - the renderer now stops 'speaker' explicitly and independently when the
  *   AI Generated Response panel is disabled, instead of it staying connected underneath a
  *   hidden panel.
+ * 2026-07-20 (later same day) - Fixed update:apply not actually reinstalling: launching the
+ *   installer immediately and quitting 800ms later was a race - app.quit() only starts an
+ *   async shutdown, it doesn't guarantee this process's file locks are released by the time
+ *   NSIS tries to overwrite them. Confirmed live: the update downloaded but never installed.
+ *   Now spawns a companion batch script that polls tasklist for this process's own PID to
+ *   genuinely disappear before launching the installer (verified this polling logic
+ *   in isolation against a dummy process before shipping it), then self-deletes.
  */
