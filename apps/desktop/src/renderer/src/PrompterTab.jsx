@@ -133,9 +133,16 @@ export default function PrompterTab({
               </span>
             </p>
           </div>
-          <div className="flex-1 overflow-y-auto px-4 py-3 min-h-0">
-            {partnerTranscript ? (
-              <p className="text-sm text-gray-700 whitespace-pre-wrap">{partnerTranscript}</p>
+          <div className="flex-1 overflow-y-auto px-4 py-3 min-h-0 space-y-2">
+            {partnerTranscript.length > 0 ? (
+              partnerTranscript.map((segment, i) => (
+                <p
+                  key={i}
+                  className="text-sm text-gray-800 bg-gray-50 border border-gray-100 rounded-xl px-4 py-2.5 whitespace-pre-wrap"
+                >
+                  {segment}
+                </p>
+              ))
             ) : (
               <p className="text-xs text-gray-400">
                 Have your partner open this interview's Prompter tab in the web app and hit Start speaking.
@@ -215,4 +222,9 @@ export default function PrompterTab({
  *   Prompter could fail to fetch the Web Prompter Transcript at all if the Speaker session
  *   failed first (e.g. no OpenAI key set) - the relay and the AI session are now fully
  *   independent, so one's failure never blocks the other.
+ * 2026-07-20 (later same day) - partnerTranscript is now an array of segments (one per
+ *   message card), rendered as separate bordered cards matching the web Prompter's own
+ *   visual style, instead of one flowing paragraph - see InterviewWorkspace.jsx's same-day
+ *   entry for the accumulation-logic bug this fixes (confirmed live: a garbled run-on like
+ *   "tell tell me tell me about SAP as as well as...").
  */

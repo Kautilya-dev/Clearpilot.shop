@@ -67,9 +67,11 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
   // Prompter tab's Web Prompter Transcription panel - the live relay from the web app's
   // Prompter tab, independent of aiResponse above (both panels run simultaneously now,
   // unlike the old Job Mode/Practice Partner split where only one suggestion source was
-  // ever active at a time).
-  const partnerTranscriptRef = useRef('')
-  const [partnerTranscript, setPartnerTranscript] = useState('')
+  // ever active at a time). An array of segments (message cards, matching the web
+  // Prompter's own display) rather than one flat string - see onPracticeTranscript below
+  // for why that distinction matters.
+  const partnerTranscriptRef = useRef([])
+  const [partnerTranscript, setPartnerTranscript] = useState([])
   // Whether the AI Generated Response panel is enabled - lifted here (not local to
   // PrompterTab) because toggling it must actually start/stop the underlying Speaker
   // session (see toggleAiResponse below), not just hide the panel - the Prompter tab's own
@@ -195,21 +197,27 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
 
   // Prompter tab's Web Prompter Transcription panel - the relayed transcript from the web
   // app's Prompter tab (see apps/web/routers/practice.py), independent of aiResponse above.
-  // A partner may speak across several pauses, so a genuinely new segment appends rather
-  // than replaces - partnerTranscriptRef resets when the Prompter session stops (see
+  // A partner may speak across several pauses, so a genuinely new segment (card) appends
+  // rather than replaces - partnerTranscriptRef resets when the Prompter session stops (see
   // stopListening below). The web Prompter's speech engine re-fires isFinal multiple times
   // for what is really the same growing utterance ("hi", then "hi my name", then "hi my
   // name is Krishna", each sent over the relay as its own transcript_final) rather than
-  // settling once, so naively appending every arriving chunk reproduced that exact same
-  // text as one long repeated-prefix run-on here. Mirror the same fix used for the web
-  // Prompter's own transcript panel: if the new text is an extension of (or exact repeat
-  // of) what's already accumulated, replace instead of append.
+  // settling once. Comparing an arriving fragment against the ENTIRE accumulated session
+  // text (a single flat string) only correctly merges revisions of the FIRST card ever -
+  // every card after that starts a fresh utterance that doesn't extend the whole prior
+  // history, so it got appended piecemeal fragment-by-fragment instead of merged in place,
+  // producing a garbled run-on (confirmed live: "tell tell me tell me about SAP as as well
+  // as..."). Tracking segments as an array and comparing only against the LAST one - not
+  // the whole history - mirrors what the web Prompter's own appendPrompterLine() already
+  // does correctly, and is also what lets the desktop render these as separate message
+  // cards instead of one flowing paragraph (see PrompterTab.jsx).
   useEffect(() => {
     window.clearpilot.onPracticeTranscript(({ text }) => {
-      const current = partnerTranscriptRef.current
-      const accumulated = !current ? text : text.startsWith(current) ? text : `${current} ${text}`
-      partnerTranscriptRef.current = accumulated
-      setPartnerTranscript(accumulated)
+      const segments = partnerTranscriptRef.current
+      const last = segments[segments.length - 1]
+      const updated = last && text.startsWith(last) ? [...segments.slice(0, -1), text] : [...segments, text]
+      partnerTranscriptRef.current = updated
+      setPartnerTranscript(updated)
     })
     window.clearpilot.onPracticeGuestStatus(({ connected }) => setGuestConnected(connected))
     window.clearpilot.onPracticeError(({ message }) => setListenError(message))
@@ -326,13 +334,18 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
     // History so it can be reviewed later regardless of which side was live - see
     // apps/web/routers/history.py's save_prompter_session. Nothing to save if neither
     // panel ever got any content (e.g. session was started and immediately stopped).
-    if (mode === 'prompter' && (aiResponseRef.current.answer || partnerTranscriptRef.current)) {
-      window.clearpilot.savePrompterSession(interview.id, partnerTranscriptRef.current, aiResponseRef.current.answer)
+    // Segments join with a blank line so each card reads as its own paragraph in History.
+    if (mode === 'prompter' && (aiResponseRef.current.answer || partnerTranscriptRef.current.length > 0)) {
+      window.clearpilot.savePrompterSession(
+        interview.id,
+        partnerTranscriptRef.current.join('\n\n'),
+        aiResponseRef.current.answer
+      )
     }
     aiResponseRef.current = { question: '', answer: '' }
     setAiResponse({ question: '', answer: '' })
-    partnerTranscriptRef.current = ''
-    setPartnerTranscript('')
+    partnerTranscriptRef.current = []
+    setPartnerTranscript([])
     listenModeRef.current = 'off'
     setListenMode('off')
     setSpeakerTranscript('')
@@ -486,4 +499,14 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
  *   entry); the AI panel's own start/stop (startAiResponse/stopAiResponse/toggleAiResponse,
  *   lifted aiEnabled/aiEnabledRef state) independently controls the Speaker session via the
  *   existing 'speaker' IPC channel, whether or not Prompter's relay is connected.
+ * 2026-07-20 (later same day) - Fixed partnerTranscript garbling on real multi-utterance
+ *   sessions: comparing each arriving relay fragment against the ENTIRE accumulated session
+ *   text (a flat string) only correctly merged growing/duplicate revisions of the FIRST
+ *   utterance ever - every utterance after that starts fresh and doesn't extend the whole
+ *   prior history, so it got appended piecemeal fragment-by-fragment instead of merged in
+ *   place, producing a garbled run-on (confirmed live: "tell tell me tell me about SAP as
+ *   as well as..."). partnerTranscript is now an array of segments, comparing new arrivals
+ *   only against the LAST segment (matching the web Prompter's own appendPrompterLine()
+ *   logic) - also lets PrompterTab.jsx render these as separate message cards instead of
+ *   one flowing paragraph.
  */
