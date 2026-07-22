@@ -72,12 +72,18 @@ contextBridge.exposeInMainWorld('clearpilot', {
   onListeningAnswer: (callback) => {
     ipcRenderer.on('listening:answer', (event, data) => callback(data))
   },
+  // GPT's answer so far, while still generating - live streaming display (Prompter tab only,
+  // see realtimeSessionManager.js/main/index.js's same-day entries)
+  onListeningAnswerChunk: (callback) => {
+    ipcRenderer.on('listening:answerChunk', (event, data) => callback(data))
+  },
   onListeningError: (callback) => {
     ipcRenderer.on('listening:error', (event, data) => callback(data))
   },
   offListeningEvents: () => {
     ipcRenderer.removeAllListeners('listening:question')
     ipcRenderer.removeAllListeners('listening:answer')
+    ipcRenderer.removeAllListeners('listening:answerChunk')
     ipcRenderer.removeAllListeners('listening:error')
   },
 
@@ -125,4 +131,7 @@ contextBridge.exposeInMainWorld('clearpilot', {
  * 2026-07-20 - Renamed savePracticeRound -> savePrompterSession (new {webTranscript,
  *   aiResponse} shape, no more coachFeedback/yourResponse - the AI judge was removed).
  *   Added checkForUpdate/applyUpdate bridges for the new Settings -> Update tab.
+ * 2026-07-22 - Added onListeningAnswerChunk bridge for listening:answerChunk, so the
+ *   Prompter tab's AI Generated Response panel can stream text live instead of waiting for
+ *   the full answer (see main/index.js and realtimeSessionManager.js's same-day entries).
  */

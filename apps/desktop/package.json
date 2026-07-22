@@ -1,6 +1,6 @@
 {
   "name": "@clearpilot/desktop",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "private": true,
   "description": "ClearPilot desktop copilot - login with your ClearPilot account, pick an interview, ask live with a stealth screen-share-hidden overlay",
   "main": "out/main/index.js",

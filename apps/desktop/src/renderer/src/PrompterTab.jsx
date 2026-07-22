@@ -7,7 +7,8 @@
  * can never block the relay. No AI judge, no mic listening, no comparison of anything the
  * candidate says - that entire feature was removed. Rendered by InterviewWorkspace.jsx,
  * which owns and passes down all the state here (listenMode, aiResponseHistory,
- * pendingAiQuestion, aiEnabled, partnerTranscript, guestConnected) plus the start/stop/toggle
+ * pendingAiQuestion, pendingAiAnswerHtml, aiEnabled, partnerTranscript, guestConnected) plus
+ * the start/stop/toggle
  * handlers - aiEnabled is a controlled prop, not local state, because InterviewWorkspace
  * needs to know its value to decide whether to start the Speaker session when Prompter
  * itself starts. Both panels render newest-first (matching CopilotScreen.jsx's conversation)
@@ -42,6 +43,7 @@ export default function PrompterTab({
   speakerDeviceName,
   aiResponseHistory,
   pendingAiQuestion,
+  pendingAiAnswerHtml,
   aiEnabled,
   onToggleAiResponse,
   partnerTranscript,
@@ -63,7 +65,7 @@ export default function PrompterTab({
 
   useEffect(() => {
     aiPanelRef.current?.scrollTo({ top: 0 })
-  }, [pendingAiQuestion, aiResponseHistory])
+  }, [pendingAiQuestion, pendingAiAnswerHtml, aiResponseHistory])
 
   // Document-level listeners (not onMouseMove/onMouseUp on the panel itself) so the drag
   // keeps tracking even if the cursor briefly leaves the container bounds mid-drag - a
@@ -196,7 +198,15 @@ export default function PrompterTab({
                       <span className="font-medium text-gray-600">Interviewer: </span>
                       {pendingAiQuestion}
                     </p>
-                    <p className="text-xs text-gray-400">Generating a suggested answer…</p>
+                    {pendingAiAnswerHtml ? (
+                      <div
+                        className="answer-text text-sm"
+                        style={ANSWER_STYLE}
+                        dangerouslySetInnerHTML={{ __html: pendingAiAnswerHtml }}
+                      />
+                    ) : (
+                      <p className="text-xs text-gray-400">Generating a suggested answer…</p>
+                    )}
                   </div>
                 )}
 
@@ -267,4 +277,9 @@ export default function PrompterTab({
  *   pendingAiQuestion (a heard-but-not-yet-answered question, shown above the history like
  *   Copilot's in-progress streaming answer) - every question asked during a session now
  *   stays visible instead of erasing the last one.
+ * 2026-07-22 (later same day) - AI Generated Response now streams live: added
+ *   pendingAiAnswerHtml prop, rendered under the pending question in place of the static
+ *   "Generating a suggested answer…" placeholder once any text has arrived (falls back to
+ *   that placeholder while it's still empty) - see InterviewWorkspace.jsx's same-day entry
+ *   for where the streaming state itself lives.
  */

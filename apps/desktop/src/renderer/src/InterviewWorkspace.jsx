@@ -63,8 +63,8 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
   // from system audio. No judging/comparison of anything the candidate says - removed
   // entirely along with Job Mode's AI judge (see PrompterTab.jsx, formerly JudgeTab.jsx).
   // Mirrors Copilot's streaming/history split: RealtimeSessionManager (realtimeSessionManager.js)
-  // emits onQuestion/onAnswer exactly ONCE per finalized question/answer (not chunked), so a
-  // NEW listening:question event always means a genuinely new exchange started, not a
+  // emits onQuestion/onAnswer exactly ONCE per finalized question/answer, so a NEW
+  // listening:question event always means a genuinely new exchange started, not a
   // continuation - pendingAiQuestion holds a heard-but-not-yet-answered question (like
   // Copilot's `streaming` with no html yet), and once the answer arrives the completed pair
   // is prepended to aiResponseHistory (newest first, like Copilot's `history`) instead of
@@ -74,6 +74,14 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
   const [aiResponseHistory, setAiResponseHistory] = useState([])
   const pendingAiQuestionRef = useRef('')
   const [pendingAiQuestion, setPendingAiQuestion] = useState('')
+  // The pending question's answer, live, while GPT is still generating it. onAnswerChunk
+  // (realtimeSessionManager.js) reports the FULL text accumulated so far on every delta, not
+  // just the new fragment, so this just needs to hold the latest value, not accumulate one
+  // itself - rendered through the same rAF-batched flush pattern Copilot's own chat streaming
+  // uses (see rawTextRef/pendingRenderRef above) so fast deltas don't force a re-render each.
+  const pendingAiAnswerRawRef = useRef('')
+  const pendingAiAnswerRenderPendingRef = useRef(false)
+  const [pendingAiAnswerHtml, setPendingAiAnswerHtml] = useState('')
   // Prompter tab's Web Prompter Transcription panel - the live relay from the web app's
   // Prompter tab, independent of aiResponseHistory above (both panels run simultaneously now,
   // unlike the old Job Mode/Practice Partner split where only one suggestion source was
@@ -164,6 +172,11 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
 
   const speakerTranscriptRef = useRef('')
 
+  function flushPendingAiAnswerRender() {
+    pendingAiAnswerRenderPendingRef.current = false
+    setPendingAiAnswerHtml(renderMarkdown(pendingAiAnswerRawRef.current))
+  }
+
   useEffect(() => {
     window.clearpilot.onListeningQuestion(({ source, text }) => {
       if (source !== 'speaker') return // 'mic' question events are unused now - no judge to feed them to
@@ -172,6 +185,22 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
       if (listenModeRef.current === 'prompter') {
         pendingAiQuestionRef.current = text
         setPendingAiQuestion(text)
+        // A new question means a fresh answer is about to start streaming in - clear out
+        // whatever was left over from the previous exchange (it's already safely in
+        // aiResponseHistory by now, see onListeningAnswer below).
+        pendingAiAnswerRawRef.current = ''
+        setPendingAiAnswerHtml('')
+      }
+    })
+
+    window.clearpilot.onListeningAnswerChunk(({ source, text }) => {
+      if (source !== 'speaker' || listenModeRef.current !== 'prompter') return
+      // text is the full answer accumulated so far (not just the new delta) - see
+      // realtimeSessionManager.js's setAnswerChunkCallback - so just store it directly.
+      pendingAiAnswerRawRef.current = text
+      if (!pendingAiAnswerRenderPendingRef.current) {
+        pendingAiAnswerRenderPendingRef.current = true
+        requestAnimationFrame(flushPendingAiAnswerRender)
       }
     })
 
@@ -182,13 +211,16 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
           // push to Copilot history, that panel has its own display (see PrompterTab.jsx).
           // The answer arrives once, fully formed (see realtimeSessionManager.js's onAnswer),
           // so as soon as it's here the exchange is complete - prepend it to history
-          // (newest first) and clear the pending question rather than overwriting one slot.
+          // (newest first) and clear the pending question/streaming answer rather than
+          // overwriting one slot.
           const question = pendingAiQuestionRef.current
           const updated = [{ question, answer: text }, ...aiResponseHistoryRef.current]
           aiResponseHistoryRef.current = updated
           setAiResponseHistory(updated)
           pendingAiQuestionRef.current = ''
           setPendingAiQuestion('')
+          pendingAiAnswerRawRef.current = ''
+          setPendingAiAnswerHtml('')
         } else {
           // Copilot mode: push speaker answer directly into conversation history
           const question = speakerTranscriptRef.current || '🎤 Speaker'
@@ -375,6 +407,8 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
     setAiResponseHistory([])
     pendingAiQuestionRef.current = ''
     setPendingAiQuestion('')
+    pendingAiAnswerRawRef.current = ''
+    setPendingAiAnswerHtml('')
     partnerTranscriptRef.current = []
     setPartnerTranscript([])
     listenModeRef.current = 'off'
@@ -480,6 +514,7 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
           speakerDeviceName={audioCapture.speakerDeviceName}
           aiResponseHistory={aiResponseHistory}
           pendingAiQuestion={pendingAiQuestion}
+          pendingAiAnswerHtml={pendingAiAnswerHtml}
           aiEnabled={aiEnabled}
           onToggleAiResponse={toggleAiResponse}
           partnerTranscript={partnerTranscript}
@@ -555,4 +590,18 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
  *   stopListening's savePrompterSession call now reverses both back to chronological order
  *   before saving (History should read top-to-bottom in the order things were said, not
  *   newest-first) and saves every aiResponseHistory exchange, not just the last answer.
+ * 2026-07-22 (later same day) - Two fixes: (1) AI Generated Response now streams live -
+ *   RealtimeSessionManager's onAnswer only ever fired once, fully formed, so the panel showed
+ *   a static "Generating a suggested answer…" the whole time GPT was responding. Added
+ *   pendingAiAnswerRawRef/pendingAiAnswerRenderPendingRef/pendingAiAnswerHtml, fed by the new
+ *   onListeningAnswerChunk event (rAF-batched render, same pattern as Copilot's own
+ *   rawTextRef/pendingRenderRef chat streaming) - cleared on a new question and finalized into
+ *   aiResponseHistory once onListeningAnswer's full answer arrives. (2) Investigated a live
+ *   report of the Web Prompter Transcription panel never receiving anything - Railway logs
+ *   showed the desktop app's relay connection succeeding (6 host connections) while the web
+ *   app's guest connection never reached the server at all (0 guest connections) in the same
+ *   window, and neither side surfaced connection failures to the user at all (see
+ *   main/index.js's connectPracticeRelay fix and apps/web/pages/interview.html's matching fix)
+ *   - this file's onPracticeError handler (already wired to setListenError) needed no changes,
+ *   it was only ever missing the events to display.
  */

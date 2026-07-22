@@ -1,3 +1,14 @@
+/* ABOUT THIS FILE
+Wraps a single OpenAI Realtime API WebSocket session (gpt-realtime-2): sends captured audio
+chunks in, listens for input-audio transcription (the question) and generated text response
+(the answer) coming back, and surfaces both through callbacks. One instance per active
+Speaker or Mic session - main/index.js's startSingleSession() creates it, wires the three
+callbacks below to IPC events the renderer listens for, and calls sendAudioChunk()/disconnect()
+as audio arrives / the session ends. Used by both Copilot's standalone Speaker/Mic modes and
+the Prompter tab's AI Generated Response panel (InterviewWorkspace.jsx routes events to one
+display or the other based on which mode is active when they arrive - this class itself has
+no notion of "Copilot" vs "Prompter", it just reports what it heard/generated).
+*/
 const WebSocket = require('ws')
 
 // gpt-realtime-2: hears audio, understands it, responds in text.
@@ -12,14 +23,23 @@ class RealtimeSessionManager {
     this.isConnected = false
     this.pendingText = ''
     this.pendingQuestion = ''
-    this.onAnswer = null    // GPT's text response → goes to answer area
-    this.onQuestion = null  // input audio transcript → goes to question area
+    this.onAnswer = null      // GPT's full text response, once done → goes to answer area
+    this.onAnswerChunk = null // GPT's answer so far, as it's still generating → live streaming display
+    this.onQuestion = null    // input audio transcript → goes to question area
     this.onError = null
   }
 
-  // GPT's generated answer text
+  // GPT's generated answer text - fires once, when the response is fully done
   setAnswerCallback(callback) {
     this.onAnswer = callback
+  }
+
+  // GPT's answer text as it streams in - fires repeatedly with the full text accumulated
+  // SO FAR (not just the new delta), so the caller never needs its own accumulation logic -
+  // this class is the single source of truth for that (see the Web Prompter Transcription
+  // duplication bug this session's earlier fix was about, for why that distinction matters).
+  setAnswerChunkCallback(callback) {
+    this.onAnswerChunk = callback
   }
 
   // What was heard (input audio transcription)
@@ -156,6 +176,7 @@ class RealtimeSessionManager {
       // GPT's answer — stream partial text for responsiveness
       case 'response.output_text.delta':
         this.pendingText += message.delta || ''
+        this.onAnswerChunk?.(this.pendingText)
         break
 
       // GPT's answer fully done — emit to answer area
@@ -224,3 +245,13 @@ class RealtimeSessionManager {
 }
 
 module.exports = RealtimeSessionManager
+
+// UPDATES LOG
+// 2026-07-22 - Added onAnswerChunk/setAnswerChunkCallback: response.output_text.delta was
+//   already being accumulated into this.pendingText, but nothing was ever done with it until
+//   the full answer was done - the Prompter tab's AI Generated Response panel just showed a
+//   static "Generating a suggested answer…" placeholder with no visible progress the entire
+//   time GPT was responding. Now onAnswerChunk fires on every delta with the full text
+//   accumulated so far (not just the new fragment), so main/index.js can relay it over IPC
+//   and InterviewWorkspace.jsx can render it live - see main/index.js and
+//   InterviewWorkspace.jsx's same-day entries.

@@ -39,6 +39,11 @@ let micStopIntentional = false
 // stream its live transcript in here as the "Web Prompter Transcription" panel - keyed by
 // interview_id, no join code needed since pairing is implicit (same account, same interview).
 let practiceRelay = null
+// Mirrors speakerStopIntentional/micStopIntentional above - set right before we close the
+// relay ourselves (disconnectPracticeRelay), so the close handler can tell "user clicked Stop
+// Prompter" apart from a real failure (auth rejected, Redis down, network drop) and only
+// surface an error to the renderer for the latter.
+let practiceRelayStopIntentional = false
 
 // Focus Mode shrinks the same window into a compact floating widget rather than opening a
 // second BrowserWindow - this remembers what bounds to restore on Dashboard-return. Always-on-top
@@ -602,15 +607,46 @@ function registerIpcHandlers() {
     return apiClient.BASE_URL.replace(/^http/, 'ws') + urlPath
   }
 
+  // Friendly text for an abnormal relay close - matches the close codes
+  // apps/web/routers/practice.py actually sends (4401 bad/expired token, 4403 interview not
+  // owned by this account, 1013 Redis unavailable) plus a generic fallback for anything else
+  // (network drop, proxy issue, etc). A normal client-initiated close never reaches this -
+  // see practiceRelayStopIntentional above.
+  function practiceRelayCloseMessage(code) {
+    switch (code) {
+      case 4401:
+        return 'Prompter relay rejected: your sign-in has expired. Sign out and back in, then try again.'
+      case 4403:
+        return "Prompter relay rejected: this interview isn't linked to your account."
+      case 1013:
+        return 'Prompter relay unavailable right now - its storage backend is down. Try again shortly.'
+      default:
+        return `Prompter relay connection closed unexpectedly (code ${code}). Check your internet connection and try again.`
+    }
+  }
+
   // Practice Partner mode's "host" (candidate) side - connects to the backend relay that
   // apps/web/pages/interview.html's Prompter tab (the "guest") also connects to, keyed by
   // interview_id so no join code is needed (same account owns both sides).
   function connectPracticeRelay(interviewId, token) {
+    practiceRelayStopIntentional = false
     const url = `${wsUrl('/api/practice-relay/ws')}?interview_id=${interviewId}&role=host&token=${encodeURIComponent(token)}`
     console.log('[practice] connecting to relay:', url.replace(/token=[^&]+/, 'token=***'))
     practiceRelay = new WebSocket(url)
     practiceRelay.on('open', () => console.log('[practice] relay connected'))
-    practiceRelay.on('close', (code) => console.log('[practice] relay closed, code:', code))
+    // Previously this only logged the close code - if the relay never actually connected (bad
+    // token, Redis down, network issue) the renderer had no way to know: Start Prompter always
+    // reported success (connectPracticeRelay returns immediately, before the socket even opens),
+    // and the Web Prompter Transcription panel just sat on "Waiting for partner…" forever,
+    // indistinguishable from "the partner just hasn't spoken yet" (confirmed live: user
+    // reported never receiving the web relay's transcript with no error shown anywhere).
+    // Surface every abnormal close as a real error now, unless we closed it ourselves.
+    practiceRelay.on('close', (code) => {
+      console.log('[practice] relay closed, code:', code)
+      if (!practiceRelayStopIntentional) {
+        mainWindow?.webContents.send('practice:relayError', { message: practiceRelayCloseMessage(code) })
+      }
+    })
     practiceRelay.on('message', (data) => {
       let payload
       try {
@@ -634,6 +670,7 @@ function registerIpcHandlers() {
   }
 
   function disconnectPracticeRelay() {
+    practiceRelayStopIntentional = true
     practiceRelay?.close()
     practiceRelay = null
   }
@@ -648,6 +685,13 @@ function registerIpcHandlers() {
       })
       manager.setAnswerCallback((text) => {
         mainWindow?.webContents.send('listening:answer', { source, text })
+      })
+      // Live streaming display for the Prompter tab's AI Generated Response panel - see
+      // realtimeSessionManager.js's same-day entry. Copilot's own Speaker/Mic modes receive
+      // this event too (both share this same session) but InterviewWorkspace.jsx only acts on
+      // it while listenMode is 'prompter', so Copilot is unaffected.
+      manager.setAnswerChunkCallback((text) => {
+        mainWindow?.webContents.send('listening:answerChunk', { source, text })
       })
       manager.setErrorCallback(async (error) => {
         const wasIntentional = source === 'speaker' ? speakerStopIntentional : micStopIntentional
@@ -853,4 +897,13 @@ if (!gotLock) {
  *   PowerShell script (Get-Process/Start-Sleep run in-process, no nested console-allocating
  *   subprocess per poll) launched via -WindowStyle Hidden, which actually holds for the
  *   whole wait. Same polling behavior, re-verified in isolation against a dummy process.
+ * 2026-07-22 - Two fixes: (1) wired RealtimeSessionManager's new setAnswerChunkCallback so
+ *   the Prompter tab's AI Generated Response panel can stream text live instead of showing a
+ *   static placeholder until the full answer lands (see realtimeSessionManager.js's same-day
+ *   entry). (2) connectPracticeRelay's close handler only ever logged the close code -
+ *   confirmed live (via Railway logs: 6 host connections, 0 guest connections in the same
+ *   window) that a failed relay connection was completely silent to the user, indistinguishable
+ *   from "the partner just hasn't spoken yet". Added practiceRelayStopIntentional (mirrors
+ *   speakerStopIntentional/micStopIntentional) so an abnormal close now sends practice:relayError
+ *   with a code-specific message, while a genuine user-initiated Stop Prompter stays silent.
  */

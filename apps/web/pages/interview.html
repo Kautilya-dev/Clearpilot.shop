@@ -984,24 +984,54 @@ latter defined in app.js, already loaded on this page).
   }
   initPrompterHistoryVisibility();
 
+  // Friendly text for an abnormal relay close - matches the close codes
+  // apps/web/routers/practice.py actually sends (4401 bad/expired token, 4403 interview not
+  // owned by this account, 1013 Redis unavailable) plus a generic fallback for anything else.
+  function practiceRelayCloseMessage(code) {
+    switch (code) {
+      case 4401: return 'Connection error - your sign-in has expired. Refresh the page and sign in again.';
+      case 4403: return "Connection error - this interview isn't linked to your account.";
+      case 1013: return 'Connection error - the relay service is temporarily unavailable.';
+      default: return `Connection error (code ${code}) - check your internet connection and try again.`;
+    }
+  }
+
   // Relays each finalized phrase to the candidate's Desktop app via the backend's Redis-
   // Pub/Sub relay (apps/web/routers/practice.py) - keyed by interview_id, no join code
   // needed since pairing is implicit (same account, same interview on both sides).
   function connectPracticeSocket() {
     const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const url = `${scheme}//${location.host}/api/practice-relay/ws?interview_id=${interviewId}&role=guest&token=${encodeURIComponent(getToken())}`;
-    practiceSocket = new WebSocket(url);
+    try {
+      practiceSocket = new WebSocket(url);
+    } catch (err) {
+      console.error('[prompter] failed to open relay socket:', err);
+      updatePrompterStatus('Connection error - could not open the relay connection.');
+      return;
+    }
     practiceSocket.onopen = () => {
       practiceConnected = true;
+      console.log('[prompter] relay connected');
       updatePrompterStatus();
     };
-    practiceSocket.onerror = () => {
+    practiceSocket.onerror = (event) => {
       practiceConnected = false;
+      console.error('[prompter] relay socket error', event);
       updatePrompterStatus('Connection error - is the candidate signed in?');
     };
-    practiceSocket.onclose = () => {
+    // Previously this just called updatePrompterStatus() with no message, which falls back to
+    // "Listening — connecting…" - indistinguishable from a normal in-progress connection even
+    // when the server actively rejected us (bad token, wrong interview, Redis down). A server-
+    // side close after accept() (see practice.py) fires THIS handler, not onerror above, since
+    // the WebSocket handshake itself completed fine - only the app-level check afterward
+    // failed. Confirmed live: a user reported never getting anything through this relay with
+    // no error shown anywhere on either side (see InterviewWorkspace.jsx's same-day entry for
+    // the matching desktop-side fix).
+    practiceSocket.onclose = (event) => {
       practiceConnected = false;
-      if (prompterListening) updatePrompterStatus();
+      console.log('[prompter] relay closed, code:', event.code, 'reason:', event.reason);
+      if (!prompterListening) return; // we intentionally stopped - not an error
+      updatePrompterStatus(practiceRelayCloseMessage(event.code));
     };
   }
 
@@ -1156,5 +1186,16 @@ latter defined in app.js, already loaded on this page).
   removed outright - the request was to hide Prompter History from NORMAL users specifically,
   not to remove it for everyone including admins. #prompter-view-toggle starts hidden in the
   HTML and is only unhidden once the async admin check resolves true.
+2026-07-22 - connectPracticeSocket()'s onclose previously just called updatePrompterStatus()
+  with no message on ANY close, including a server-side reject after accept() (bad/expired
+  token, wrong interview owner, Redis down - see practice.py's close codes) - that falls back
+  to "Listening — connecting…", identical to a normal in-progress connection, so a real
+  failure was completely invisible. Investigated a live report of the Desktop app never
+  receiving anything from this relay: Railway logs showed the desktop side's connections
+  succeeding while this page's guest connection never reached the server at all in the same
+  window. Added practiceRelayCloseMessage() (code-specific text) and wrapped the WebSocket
+  constructor in try/catch, so a real failure is now visible in the status text instead of
+  silently indistinguishable from "partner hasn't started speaking yet" - see
+  InterviewWorkspace.jsx's matching same-day entry for the desktop-side half of this fix.
 -->
 
