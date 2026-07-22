@@ -6,10 +6,13 @@
  * display toggle, so disabling it actually stops listening and a missing/failing OpenAI key
  * can never block the relay. No AI judge, no mic listening, no comparison of anything the
  * candidate says - that entire feature was removed. Rendered by InterviewWorkspace.jsx,
- * which owns and passes down all the state here (listenMode, aiResponse, aiEnabled,
- * partnerTranscript, guestConnected) plus the start/stop/toggle handlers - aiEnabled is a
- * controlled prop, not local state, because InterviewWorkspace needs to know its value to
- * decide whether to start the Speaker session when Prompter itself starts.
+ * which owns and passes down all the state here (listenMode, aiResponseHistory,
+ * pendingAiQuestion, aiEnabled, partnerTranscript, guestConnected) plus the start/stop/toggle
+ * handlers - aiEnabled is a controlled prop, not local state, because InterviewWorkspace
+ * needs to know its value to decide whether to start the Speaker session when Prompter
+ * itself starts. Both panels render newest-first (matching CopilotScreen.jsx's conversation)
+ * and auto-scroll to the top on new content - see the two useEffects near the top of this
+ * component.
  */
 import { useState, useRef, useEffect } from 'react'
 import { marked } from 'marked'
@@ -37,7 +40,8 @@ export default function PrompterTab({
   onStopListening,
   speakerLevel,
   speakerDeviceName,
-  aiResponse,
+  aiResponseHistory,
+  pendingAiQuestion,
   aiEnabled,
   onToggleAiResponse,
   partnerTranscript,
@@ -47,6 +51,19 @@ export default function PrompterTab({
   const [splitPct, setSplitPct] = useState(DEFAULT_SPLIT_PCT) // Web Prompter panel's width %
   const [isDragging, setIsDragging] = useState(false)
   const containerRef = useRef(null)
+  const webPanelRef = useRef(null)
+  const aiPanelRef = useRef(null)
+
+  // Both panels are newest-first (see InterviewWorkspace.jsx) - snap back to the top on every
+  // new arrival so the latest content is always visible without the user manually scrolling,
+  // matching CopilotScreen.jsx's conversationRef.current?.scrollTo({top:0}) behavior exactly.
+  useEffect(() => {
+    webPanelRef.current?.scrollTo({ top: 0 })
+  }, [partnerTranscript])
+
+  useEffect(() => {
+    aiPanelRef.current?.scrollTo({ top: 0 })
+  }, [pendingAiQuestion, aiResponseHistory])
 
   // Document-level listeners (not onMouseMove/onMouseUp on the panel itself) so the drag
   // keeps tracking even if the cursor briefly leaves the container bounds mid-drag - a
@@ -133,7 +150,7 @@ export default function PrompterTab({
               </span>
             </p>
           </div>
-          <div className="flex-1 overflow-y-auto px-4 py-3 min-h-0 space-y-2">
+          <div ref={webPanelRef} className="flex-1 overflow-y-auto px-4 py-3 min-h-0 space-y-2">
             {partnerTranscript.length > 0 ? (
               partnerTranscript.map((segment, i) => (
                 <p
@@ -172,22 +189,34 @@ export default function PrompterTab({
                   Disable
                 </button>
               </div>
-              <div className="flex-1 overflow-y-auto px-4 py-3 min-h-0 space-y-3">
-                {aiResponse.question && (
-                  <p className="text-xs text-gray-500">
-                    <span className="font-medium text-gray-600">Interviewer: </span>
-                    {aiResponse.question}
-                  </p>
+              <div ref={aiPanelRef} className="flex-1 overflow-y-auto px-4 py-3 min-h-0 space-y-4">
+                {pendingAiQuestion && (
+                  <div className="space-y-1.5 pb-4 border-b border-gray-100">
+                    <p className="text-xs text-gray-500">
+                      <span className="font-medium text-gray-600">Interviewer: </span>
+                      {pendingAiQuestion}
+                    </p>
+                    <p className="text-xs text-gray-400">Generating a suggested answer…</p>
+                  </div>
                 )}
-                {aiResponse.answer ? (
-                  <div
-                    className="answer-text text-sm"
-                    style={ANSWER_STYLE}
-                    dangerouslySetInnerHTML={{ __html: renderMarkdown(aiResponse.answer) }}
-                  />
-                ) : (
+
+                {aiResponseHistory.length === 0 && !pendingAiQuestion && (
                   <p className="text-xs text-gray-400">Waiting for the interviewer to speak…</p>
                 )}
+
+                {aiResponseHistory.map((exchange, i) => (
+                  <div key={i} className="space-y-1.5 pb-4 border-b border-gray-100 last:border-0">
+                    <p className="text-xs text-gray-500">
+                      <span className="font-medium text-gray-600">Interviewer: </span>
+                      {exchange.question}
+                    </p>
+                    <div
+                      className="answer-text text-sm"
+                      style={ANSWER_STYLE}
+                      dangerouslySetInnerHTML={{ __html: renderMarkdown(exchange.answer) }}
+                    />
+                  </div>
+                ))}
               </div>
             </div>
           </>
@@ -227,4 +256,15 @@ export default function PrompterTab({
  *   visual style, instead of one flowing paragraph - see InterviewWorkspace.jsx's same-day
  *   entry for the accumulation-logic bug this fixes (confirmed live: a garbled run-on like
  *   "tell tell me tell me about SAP as as well as...").
+ * 2026-07-22 - Both panels now display newest-first with auto-scroll-to-top, matching
+ *   CopilotScreen.jsx's conversation instead of growing downward with no auto-scroll (user
+ *   feedback: "Response ... Comes to Top Like Copilot"). Web Prompter Transcription: no
+ *   render change needed here, since InterviewWorkspace.jsx now prepends new segments to
+ *   partnerTranscript itself - just added webPanelRef + a scroll-to-top effect. AI Generated
+ *   Response: replaced the single aiResponse={question,answer} prop (a new interviewer
+ *   question silently overwrote the previous one - only ever showed the latest exchange)
+ *   with aiResponseHistory (array, newest first, one card per completed exchange) +
+ *   pendingAiQuestion (a heard-but-not-yet-answered question, shown above the history like
+ *   Copilot's in-progress streaming answer) - every question asked during a session now
+ *   stays visible instead of erasing the last one.
  */

@@ -62,14 +62,25 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
   // Prompter tab's AI Generated Response panel - what the Speaker session heard/generated
   // from system audio. No judging/comparison of anything the candidate says - removed
   // entirely along with Job Mode's AI judge (see PrompterTab.jsx, formerly JudgeTab.jsx).
-  const aiResponseRef = useRef({ question: '', answer: '' })
-  const [aiResponse, setAiResponse] = useState({ question: '', answer: '' })
+  // Mirrors Copilot's streaming/history split: RealtimeSessionManager (realtimeSessionManager.js)
+  // emits onQuestion/onAnswer exactly ONCE per finalized question/answer (not chunked), so a
+  // NEW listening:question event always means a genuinely new exchange started, not a
+  // continuation - pendingAiQuestion holds a heard-but-not-yet-answered question (like
+  // Copilot's `streaming` with no html yet), and once the answer arrives the completed pair
+  // is prepended to aiResponseHistory (newest first, like Copilot's `history`) instead of
+  // overwriting a single slot - so multiple interviewer questions during one Prompter session
+  // all stay visible instead of each one erasing the last.
+  const aiResponseHistoryRef = useRef([])
+  const [aiResponseHistory, setAiResponseHistory] = useState([])
+  const pendingAiQuestionRef = useRef('')
+  const [pendingAiQuestion, setPendingAiQuestion] = useState('')
   // Prompter tab's Web Prompter Transcription panel - the live relay from the web app's
-  // Prompter tab, independent of aiResponse above (both panels run simultaneously now,
+  // Prompter tab, independent of aiResponseHistory above (both panels run simultaneously now,
   // unlike the old Job Mode/Practice Partner split where only one suggestion source was
   // ever active at a time). An array of segments (message cards, matching the web
   // Prompter's own display) rather than one flat string - see onPracticeTranscript below
-  // for why that distinction matters.
+  // for why that distinction matters. Newest segment first (index 0), matching Copilot's
+  // newest-first history so the latest transcript is always visible without scrolling.
   const partnerTranscriptRef = useRef([])
   const [partnerTranscript, setPartnerTranscript] = useState([])
   // Whether the AI Generated Response panel is enabled - lifted here (not local to
@@ -159,8 +170,8 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
       speakerTranscriptRef.current = text
       setSpeakerTranscript(text)
       if (listenModeRef.current === 'prompter') {
-        aiResponseRef.current.question = text
-        setAiResponse((c) => ({ ...c, question: text }))
+        pendingAiQuestionRef.current = text
+        setPendingAiQuestion(text)
       }
     })
 
@@ -169,8 +180,15 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
         if (listenModeRef.current === 'prompter') {
           // Prompter tab: speaker GPT answer feeds the AI Generated Response panel - don't
           // push to Copilot history, that panel has its own display (see PrompterTab.jsx).
-          aiResponseRef.current.answer = text
-          setAiResponse((c) => ({ ...c, answer: text }))
+          // The answer arrives once, fully formed (see realtimeSessionManager.js's onAnswer),
+          // so as soon as it's here the exchange is complete - prepend it to history
+          // (newest first) and clear the pending question rather than overwriting one slot.
+          const question = pendingAiQuestionRef.current
+          const updated = [{ question, answer: text }, ...aiResponseHistoryRef.current]
+          aiResponseHistoryRef.current = updated
+          setAiResponseHistory(updated)
+          pendingAiQuestionRef.current = ''
+          setPendingAiQuestion('')
         } else {
           // Copilot mode: push speaker answer directly into conversation history
           const question = speakerTranscriptRef.current || '🎤 Speaker'
@@ -196,9 +214,9 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
   }, [])
 
   // Prompter tab's Web Prompter Transcription panel - the relayed transcript from the web
-  // app's Prompter tab (see apps/web/routers/practice.py), independent of aiResponse above.
-  // A partner may speak across several pauses, so a genuinely new segment (card) appends
-  // rather than replaces - partnerTranscriptRef resets when the Prompter session stops (see
+  // app's Prompter tab (see apps/web/routers/practice.py), independent of aiResponseHistory
+  // above. A partner may speak across several pauses, so a genuinely new segment (card)
+  // prepends rather than replaces - partnerTranscriptRef resets when the Prompter session stops (see
   // stopListening below). The web Prompter's speech engine re-fires isFinal multiple times
   // for what is really the same growing utterance ("hi", then "hi my name", then "hi my
   // name is Krishna", each sent over the relay as its own transcript_final) rather than
@@ -207,15 +225,18 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
   // every card after that starts a fresh utterance that doesn't extend the whole prior
   // history, so it got appended piecemeal fragment-by-fragment instead of merged in place,
   // producing a garbled run-on (confirmed live: "tell tell me tell me about SAP as as well
-  // as..."). Tracking segments as an array and comparing only against the LAST one - not
-  // the whole history - mirrors what the web Prompter's own appendPrompterLine() already
-  // does correctly, and is also what lets the desktop render these as separate message
-  // cards instead of one flowing paragraph (see PrompterTab.jsx).
+  // as..."). Tracking segments as an array and comparing only against the most recently
+  // added one - not the whole history - mirrors what the web Prompter's own
+  // appendPrompterLine() already does correctly, and is also what lets the desktop render
+  // these as separate message cards instead of one flowing paragraph (see PrompterTab.jsx).
+  // The most recent segment lives at index 0 (not the end) so it displays newest-first, like
+  // Copilot's history - growing revisions of the current utterance still merge correctly,
+  // just compared against segments[0] instead of the last index.
   useEffect(() => {
     window.clearpilot.onPracticeTranscript(({ text }) => {
       const segments = partnerTranscriptRef.current
-      const last = segments[segments.length - 1]
-      const updated = last && text.startsWith(last) ? [...segments.slice(0, -1), text] : [...segments, text]
+      const mostRecent = segments[0]
+      const updated = mostRecent && text.startsWith(mostRecent) ? [text, ...segments.slice(1)] : [text, ...segments]
       partnerTranscriptRef.current = updated
       setPartnerTranscript(updated)
     })
@@ -289,7 +310,7 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
   // AI Generated Response panel's own start/stop - independent of the Prompter tab's
   // Start/Stop button, which only ever controls the relay. Reuses the same 'speaker' IPC
   // channel Copilot's standalone Speaker mode uses; onListeningQuestion/onListeningAnswer
-  // above route its events to aiResponse instead of Copilot history based on
+  // above route its events to aiResponseHistory instead of Copilot history based on
   // listenModeRef.current being 'prompter' at the moment each event arrives, regardless of
   // which function started the underlying session.
   async function startAiResponse() {
@@ -334,16 +355,26 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
     // History so it can be reviewed later regardless of which side was live - see
     // apps/web/routers/history.py's save_prompter_session. Nothing to save if neither
     // panel ever got any content (e.g. session was started and immediately stopped).
-    // Segments join with a blank line so each card reads as its own paragraph in History.
-    if (mode === 'prompter' && (aiResponseRef.current.answer || partnerTranscriptRef.current.length > 0)) {
+    // Both refs are newest-first (for on-screen display) - reverse back to chronological
+    // order here so the saved transcript reads top-to-bottom in the order things were
+    // actually said, not most-recent-first. aiResponseHistory now holds every Q&A exchange
+    // heard this session, not just the last one, so all of them get saved, not just the
+    // final answer.
+    if (mode === 'prompter' && (aiResponseHistoryRef.current.length > 0 || partnerTranscriptRef.current.length > 0)) {
+      const aiText = [...aiResponseHistoryRef.current]
+        .reverse()
+        .map((e) => `Q: ${e.question}\nA: ${e.answer}`)
+        .join('\n\n')
       window.clearpilot.savePrompterSession(
         interview.id,
-        partnerTranscriptRef.current.join('\n\n'),
-        aiResponseRef.current.answer
+        [...partnerTranscriptRef.current].reverse().join('\n\n'),
+        aiText
       )
     }
-    aiResponseRef.current = { question: '', answer: '' }
-    setAiResponse({ question: '', answer: '' })
+    aiResponseHistoryRef.current = []
+    setAiResponseHistory([])
+    pendingAiQuestionRef.current = ''
+    setPendingAiQuestion('')
     partnerTranscriptRef.current = []
     setPartnerTranscript([])
     listenModeRef.current = 'off'
@@ -447,7 +478,8 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
           onStopListening={stopListening}
           speakerLevel={audioCapture.speakerLevel}
           speakerDeviceName={audioCapture.speakerDeviceName}
-          aiResponse={aiResponse}
+          aiResponseHistory={aiResponseHistory}
+          pendingAiQuestion={pendingAiQuestion}
           aiEnabled={aiEnabled}
           onToggleAiResponse={toggleAiResponse}
           partnerTranscript={partnerTranscript}
@@ -509,4 +541,18 @@ export default function InterviewWorkspace({ interview, onBack, focusMode, onFoc
  *   only against the LAST segment (matching the web Prompter's own appendPrompterLine()
  *   logic) - also lets PrompterTab.jsx render these as separate message cards instead of
  *   one flowing paragraph.
+ * 2026-07-22 - Both Prompter panels now behave like Copilot's conversation: newest content
+ *   at the top instead of growing downward with no auto-scroll. partnerTranscript's newest
+ *   segment moved from the end of the array to index 0 (onPracticeTranscript compares
+ *   against segments[0] now, not the last index) so a new relayed line is prepended, not
+ *   appended. aiResponse (single {question, answer} slot that a new interviewer question
+ *   silently overwrote) is replaced by aiResponseHistory (array, newest first) +
+ *   pendingAiQuestion (a heard-but-not-yet-answered question, like Copilot's `streaming`) -
+ *   RealtimeSessionManager's onQuestion/onAnswer each fire once per finalized exchange, not
+ *   chunked, so onListeningAnswer now prepends the completed {question, answer} pair to
+ *   aiResponseHistory instead of overwriting the one slot, meaning every question the
+ *   interviewer asks during a session stays visible instead of erasing the last one.
+ *   stopListening's savePrompterSession call now reverses both back to chronological order
+ *   before saving (History should read top-to-bottom in the order things were said, not
+ *   newest-first) and saves every aiResponseHistory exchange, not just the last answer.
  */
