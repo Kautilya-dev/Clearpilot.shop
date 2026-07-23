@@ -815,18 +815,29 @@ function registerIpcHandlers() {
       // was a race: app.quit() only STARTS an async shutdown, it doesn't guarantee the
       // process - and its file locks - is actually gone by the time the installer runs, so
       // the install could silently fail to overwrite anything. A companion script polls for
-      // THIS process's own PID to genuinely disappear before launching the installer, then
-      // deletes itself. The FIRST attempt at that companion script used cmd.exe piping
-      // tasklist | find - confirmed live that this pops up a visible black console window
-      // ("find "<pid>"") during reinstall, because each console-mode executable in a piped
-      // batch chain can allocate its own window when spawned detached, regardless of
-      // windowsHide on the outer process. PowerShell's own Get-Process cmdlet runs
-      // in-process (no nested console-allocating subprocess per poll), so -WindowStyle
-      // Hidden here actually holds for the whole wait, not just the immediate child.
-      const pid = process.pid
+      // the app to genuinely disappear before launching the installer, then deletes itself.
+      // The FIRST attempt at that companion script used cmd.exe piping tasklist | find -
+      // confirmed live that this pops up a visible black console window ("find "<pid>"")
+      // during reinstall, because each console-mode executable in a piped batch chain can
+      // allocate its own window when spawned detached, regardless of windowsHide on the
+      // outer process. PowerShell's own Get-Process cmdlet runs in-process (no nested
+      // console-allocating subprocess per poll), so -WindowStyle Hidden here actually holds
+      // for the whole wait, not just the immediate child.
+      //
+      // Waiting on just THIS process's own PID (the first version of this fix) was still not
+      // enough - confirmed live: the update downloaded but silently never installed. Electron
+      // runs several processes under the same "ClearPilot.exe" name (main, GPU, renderer,
+      // utility - our own smoke tests always show 4 of them in tasklist), and this main
+      // process's PID can disappear while a sibling process is still exiting and still
+      // holding a lock on one of the files NSIS needs to overwrite. Now waits for EVERY
+      // process named "ClearPilot" to be gone, not just this one, with a 30s safety deadline
+      // so a rogue process that never exits can't hang the update forever (it launches the
+      // installer anyway once the deadline passes, matching the previous single-PID
+      // behavior's risk profile rather than a new, worse one).
       const scriptPath = path.join(app.getPath('temp'), 'clearpilot-update.ps1')
       const script = [
-        `while (Get-Process -Id ${pid} -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 1 }`,
+        '$deadline = (Get-Date).AddSeconds(30)',
+        'while ((Get-Process -Name "ClearPilot" -ErrorAction SilentlyContinue) -and ((Get-Date) -lt $deadline)) { Start-Sleep -Milliseconds 500 }',
         `Start-Process -FilePath "${tempPath}" -ArgumentList '/S'`,
         'Remove-Item -Path "$PSCommandPath" -Force'
       ].join('\r\n')
@@ -906,4 +917,15 @@ if (!gotLock) {
  *   from "the partner just hasn't spoken yet". Added practiceRelayStopIntentional (mirrors
  *   speakerStopIntentional/micStopIntentional) so an abnormal close now sends practice:relayError
  *   with a code-specific message, while a genuine user-initiated Stop Prompter stays silent.
+ * 2026-07-22 (later same day) - Confirmed live AGAIN: update:apply still downloaded but
+ *   didn't install, even after the previous fix waited for this process's own PID to exit.
+ *   Root cause: Electron runs several processes under the SAME "ClearPilot.exe" name (main,
+ *   GPU, renderer, utility - tasklist during this project's own smoke tests always shows 4),
+ *   and this main process's PID can disappear while a sibling is still exiting and still
+ *   holding a lock on a file NSIS needs to overwrite. The wait script now checks
+ *   `Get-Process -Name "ClearPilot"` (ALL processes sharing the name) instead of one captured
+ *   PID, with a 30s safety deadline so a process that never exits can't hang the update
+ *   forever. Verified the multi-process matching mechanism against the real packaged exe
+ *   (launched it, confirmed Get-Process finds exactly 4 ClearPilot processes, confirmed it
+ *   returns none once they're stopped) before shipping.
  */
